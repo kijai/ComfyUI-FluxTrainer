@@ -668,7 +668,6 @@ class FluxTrainLoop:
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
             "steps": ("INT", {"default": 1, "min": 1, "max": 10000, "step": 1}),
-            "end": ("BOOLEAN", {"default": False, "tooltip": "whether to end training"}),
              },
         }
 
@@ -677,7 +676,7 @@ class FluxTrainLoop:
     FUNCTION = "train"
     CATEGORY = "FluxTrainer"
 
-    def train(self, network_trainer, steps, end):
+    def train(self, network_trainer, steps):
         with torch.inference_mode(False):
             training_loop = network_trainer["training_loop"]
             network_trainer = network_trainer["network_trainer"]
@@ -712,41 +711,16 @@ class FluxTrainLoop:
                 if network_trainer.global_step >= network_trainer.args.max_train_steps:
                     break
             
-            # with torch.inference_mode(True):
-            #     image_tensors = network_trainer.sample_images(
-            #         network_trainer.accelerator, 
-            #         network_trainer.args, 
-            #         epoch, 
-            #         network_trainer.global_step,
-            #         network_trainer.vae,
-            #         network_trainer.text_encoder,
-            #         network_trainer.unet
-            #         )
-            #     print(image_tensors.min(), image_tensors.max(), image_tensors.shape)
+            ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, epoch + 1)
+            network_trainer.save_model(ckpt_name, accelerator.unwrap_model(network_trainer.network), network_trainer.global_step, epoch + 1)
 
-            if end:
-                network_trainer.metadata["ss_epoch"] = str(network_trainer.num_train_epochs)
-                network_trainer.metadata["ss_training_finished_at"] = str(time.time())
+            remove_epoch_no = train_util.get_remove_epoch_no(network_trainer.args, epoch + 1)
+            if remove_epoch_no is not None:
+                remove_ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, remove_epoch_no)
+                network_trainer.remove_model(remove_ckpt_name)
 
-                network = network_trainer.accelerator.unwrap_model(network_trainer.network)
-
-                network_trainer.accelerator.end_training()
-
-                train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
-                ckpt_name = train_util.get_last_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as)
-                network_trainer.save_model(ckpt_name, network, network_trainer.global_step, network_trainer.num_train_epochs, force_sync_upload=True)
-                logger.info("model saved.")
-            else:
-                ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, epoch + 1)
-                network_trainer.save_model(ckpt_name, accelerator.unwrap_model(network_trainer.network), network_trainer.global_step, epoch + 1)
-
-                remove_epoch_no = train_util.get_remove_epoch_no(network_trainer.args, epoch + 1)
-                if remove_epoch_no is not None:
-                    remove_ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, remove_epoch_no)
-                    network_trainer.remove_model(remove_ckpt_name)
-
-                if network_trainer.args.save_state:
-                    train_util.save_and_remove_state_on_epoch_end(network_trainer.args, accelerator, epoch + 1)
+            if network_trainer.args.save_state:
+                train_util.save_and_remove_state_on_epoch_end(network_trainer.args, accelerator, epoch + 1)
 
             trainer = {
                 "network_trainer": network_trainer,
@@ -754,6 +728,49 @@ class FluxTrainLoop:
             }
         return (trainer, )
 
+class FluxTrainEnd:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "network_trainer": ("NETWORKTRAINER",),
+             },
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("lora_path",)
+    FUNCTION = "endtrain"
+    CATEGORY = "FluxTrainer"
+
+    def endtrain(self, network_trainer):
+        with torch.inference_mode(False):
+            training_loop = network_trainer["training_loop"]
+            network_trainer = network_trainer["network_trainer"]
+            
+            
+            network_trainer.metadata["ss_epoch"] = str(network_trainer.num_train_epochs)
+            network_trainer.metadata["ss_training_finished_at"] = str(time.time())
+
+            network = network_trainer.accelerator.unwrap_model(network_trainer.network)
+
+            network_trainer.accelerator.end_training()
+
+            train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
+            ckpt_name = train_util.get_last_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as)
+            network_trainer.save_model(ckpt_name, network, network_trainer.global_step, network_trainer.num_train_epochs, force_sync_upload=True)
+            logger.info("model saved.")
+
+            training_loop = None
+            network_trainer = None
+            mm.soft_empty_cache()           
+
+            trainer = {
+                "network_trainer": network_trainer,
+                "training_loop": training_loop,
+            }
+
+            final_output_lora_path = os.path.join(network_trainer.output_dir, "output", network_trainer.output_name)
+        return (trainer, final_output_lora_path,)
+    
 class FluxTrainValidationSettings:
     @classmethod
     def INPUT_TYPES(s):
@@ -872,7 +889,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainLoop": FluxTrainLoop,
     "VisualizeLoss": VisualizeLoss,
     "FluxTrainValidate": FluxTrainValidate,
-    "FluxTrainValidationSettings": FluxTrainValidationSettings
+    "FluxTrainValidationSettings": FluxTrainValidationSettings,
+    "FluxTrainEnd": FluxTrainEnd
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxTraining": "Init Flux Training",
@@ -881,5 +899,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainLoop": "Flux Train Loop",
     "VisualizeLoss": "Visualize Loss",
     "FluxTrainValidate": "Flux Train Validate",
-    "FluxTrainValidationSettings": "Flux Train Validation Settings"
+    "FluxTrainValidationSettings": "Flux Train Validation Settings",
+    "FluxTrainEnd": "Flux Train End"
 }
