@@ -238,7 +238,7 @@ class NetworkTrainer:
 
     # endregion
 
-    def train(self, args):
+    def init_train(self, args):
         session_id = random.randint(0, 2**32)
         training_started_at = time.time()
         train_util.verify_training_args(args)
@@ -993,7 +993,7 @@ class NetworkTrainer:
             text_encoders = []
 
         # For --sample_at_first
-        self.sample_images(accelerator, args, 0, global_step, accelerator.device, vae, tokenizers, text_encoder, unet)
+        #self.sample_images(accelerator, args, 0, global_step, accelerator.device, vae, tokenizers, text_encoder, unet)
 
         # training loop
         if initial_step > 0:  # only if skip_until_initial_step is specified
