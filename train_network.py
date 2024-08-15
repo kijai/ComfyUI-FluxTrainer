@@ -102,9 +102,9 @@ class NetworkTrainer:
     def load_target_model(self, args, weight_dtype, accelerator):
         text_encoder, vae, unet, _ = train_util.load_target_model(args, weight_dtype, accelerator)
 
-        # モデルに xformers とか memory efficient attention を組み込む
+        # Incorporate xformers or memory efficient attention into the model
         train_util.replace_unet_modules(unet, args.mem_eff_attn, args.xformers, args.sdpa)
-        if torch.__version__ >= "2.0.0":  # PyTorch 2.0.0 以上対応のxformersなら以下が使える
+        if torch.__version__ >= "2.0.0":  # If you have xformers compatible with PyTorch 2.0.0 or higher, you can use the following
             vae.set_use_memory_efficient_attention_xformers(args.xformers)
 
         return model_util.get_model_version_str_for_sd1_sd2(args.v2, args.v_parameterization), text_encoder, vae, unet
@@ -262,7 +262,9 @@ class NetworkTrainer:
         latents_caching_strategy = self.get_latents_caching_strategy(args)
         strategy_base.LatentsCachingStrategy.set_strategy(latents_caching_strategy)
 
-        # データセットを準備する
+        pbar = ProgressBar(5)
+
+        # Prepare the dataset
         if args.dataset_class is None:
             blueprint_generator = BlueprintGenerator(ConfigSanitizer(True, True, args.masked_loss, True))
             if use_user_config:
@@ -271,7 +273,7 @@ class NetworkTrainer:
                 ignored = ["train_data_dir", "reg_data_dir", "in_json"]
                 if any(getattr(args, attr) is not None for attr in ignored):
                     logger.warning(
-                        "ignoring the following options because config file is found: {0} / 設定ファイルが利用されるため以下のオプションは無視されます: {0}".format(
+                        "ignoring the following options because config file is found: {0}".format(
                             ", ".join(ignored)
                         )
                     )
@@ -329,21 +331,24 @@ class NetworkTrainer:
 
         self.assert_extra_args(args, train_dataset_group)
 
-        # acceleratorを準備する
+        # prepare accelerator
         logger.info("preparing accelerator")
         accelerator = train_util.prepare_accelerator(args)
 
-        # mixed precisionに対応した型を用意しておき適宜castする
+
+        # Prepare a type that supports mixed precision and cast it as appropriate.
         weight_dtype, save_dtype = train_util.prepare_dtype(args)
         vae_dtype = torch.float32 if args.no_half_vae else weight_dtype
 
-        # モデルを読み込む
+        # Load the model
         model_version, text_encoder, vae, unet = self.load_target_model(args, weight_dtype, accelerator)
 
         # text_encoder is List[CLIPTextModel] or CLIPTextModel
         text_encoders = text_encoder if isinstance(text_encoder, list) else [text_encoder]
 
-        # 差分追加学習のためにモデルを読み込む
+        pbar.update(1)
+
+        # Load the model for incremental learning
         sys.path.append(os.path.dirname(__file__))
         accelerator.print("import network module:", args.network_module)
         network_module = importlib.import_module(args.network_module)
@@ -365,7 +370,8 @@ class NetworkTrainer:
 
             accelerator.print(f"all weights merged: {', '.join(args.base_weights)}")
 
-        # 学習を準備する
+
+        # cache latents
         if cache_latents:
             vae.to(accelerator.device, dtype=vae_dtype)
             vae.requires_grad_(False)
@@ -376,7 +382,6 @@ class NetworkTrainer:
             vae.to("cpu")
             clean_memory_on_device(accelerator.device)
 
-        # 必要ならテキストエンコーダーの出力をキャッシュする: Text Encoderはcpuまたはgpuへ移される
         # cache text encoder outputs if needed: Text Encoder is moved to cpu or gpu
         text_encoding_strategy = self.get_text_encoding_strategy(args)
         strategy_base.TextEncodingStrategy.set_strategy(text_encoding_strategy)
@@ -385,6 +390,8 @@ class NetworkTrainer:
         if text_encoder_outputs_caching_strategy is not None:
             strategy_base.TextEncoderOutputsCachingStrategy.set_strategy(text_encoder_outputs_caching_strategy)
         self.cache_text_encoder_outputs_if_needed(args, accelerator, unet, vae, text_encoders, train_dataset_group, weight_dtype)
+
+        pbar.update(1)
 
         # prepare network
         net_kwargs = {}
@@ -439,10 +446,10 @@ class NetworkTrainer:
             del t_enc
             network.enable_gradient_checkpointing()  # may have no effect
 
-        # 学習に必要なクラスを準備する
+        # Prepare classes necessary for learning
         accelerator.print("prepare optimizer, data loader etc.")
 
-        # 後方互換性を確保するよ
+        # Ensure backward compatibility
         try:
             results = network.prepare_optimizer_params(args.text_encoder_lr, args.unet_lr, args.learning_rate)
             if type(results) is tuple:
@@ -488,22 +495,22 @@ class NetworkTrainer:
             persistent_workers=args.persistent_data_loader_workers,
         )
 
-        # 学習ステップ数を計算する
-        if args.max_train_epochs is not None:
-            args.max_train_steps = args.max_train_epochs * math.ceil(
-                len(train_dataloader) / accelerator.num_processes / args.gradient_accumulation_steps
-            )
-            accelerator.print(
-                f"override steps. steps for {args.max_train_epochs} epochs is / 指定エポックまでのステップ数: {args.max_train_steps}"
-            )
+        # # Calculate the number of learning steps
+        # if args.max_train_epochs is not None:
+        #     args.max_train_steps = args.max_train_epochs * math.ceil(
+        #         len(train_dataloader) / accelerator.num_processes / args.gradient_accumulation_steps
+        #     )
+        #     accelerator.print(
+        #         f"override steps. steps for {args.max_train_epochs} epochs is {args.max_train_steps}"
+        #     )
 
-        # データセット側にも学習ステップを送信
+        # Send learning steps to the dataset side as well
         train_dataset_group.set_max_train_steps(args.max_train_steps)
 
-        # lr schedulerを用意する
+        # lr scheduler init
         lr_scheduler = train_util.get_scheduler_fix(args, optimizer, accelerator.num_processes)
 
-        # 実験的機能：勾配も含めたfp16/bf16学習を行う　モデル全体をfp16/bf16にする
+        # Experimental function: performs fp16/bf16 learning including gradients, sets the entire model to fp16/bf16
         if args.full_fp16:
             assert (
                 args.mixed_precision == "fp16"
@@ -520,10 +527,10 @@ class NetworkTrainer:
         unet_weight_dtype = te_weight_dtype = weight_dtype
         # Experimental Feature: Put base model into fp8 to save vram
         if args.fp8_base:
-            assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0 / fp8を使う場合はtorch>=2.1.0が必要です。"
+            assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0"
             assert (
                 args.mixed_precision != "no"
-            ), "fp8_base requires mixed precision='fp16' or 'bf16' / fp8を使う場合はmixed_precision='fp16'または'bf16'が必要です。"
+            ), "fp8_base requires mixed precision='fp16' or 'bf16'"
             accelerator.print("enable fp8 training.")
             unet_weight_dtype = torch.float8_e4m3fn
             te_weight_dtype = torch.float8_e4m3fn
@@ -597,14 +604,16 @@ class NetworkTrainer:
 
         accelerator.unwrap_model(network).prepare_grad_etc(text_encoder, unet)
 
-        if not cache_latents:  # キャッシュしない場合はVAEを使うのでVAEを準備する
+        if not cache_latents:  # If you do not cache, VAE will be used, so enable VAE preparation.
             vae.requires_grad_(False)
             vae.eval()
             vae.to(accelerator.device, dtype=vae_dtype)
 
-        # 実験的機能：勾配も含めたfp16学習を行う　PyTorchにパッチを当ててfp16でのgrad scaleを有効にする
+        # Experimental feature: Perform fp16 learning including gradients Apply a patch to PyTorch to enable grad scale in fp16
         if args.full_fp16:
             train_util.patch_accelerator_for_fp16_training(accelerator)
+
+        pbar.update(1)
 
         # before resuming make hook for saving/loading to save/load the network weights only
         def save_model_hook(models, weights, output_dir):
@@ -651,10 +660,12 @@ class NetworkTrainer:
         accelerator.register_save_state_pre_hook(save_model_hook)
         accelerator.register_load_state_pre_hook(load_model_hook)
 
-        # resumeする
+        # resume from local or huggingface
         train_util.resume_from_local_or_hf_if_specified(accelerator, args)
 
-        # epoch数を計算する
+        pbar.update(1)
+
+        # Calculate the number of epochs
         num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
         num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
         if (args.save_n_epoch_ratio is not None) and (args.save_n_epoch_ratio > 0):
@@ -664,17 +675,16 @@ class NetworkTrainer:
         # TODO: find a way to handle total batch size when there are multiple datasets
         total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
 
-        accelerator.print("running training / 学習開始")
-        accelerator.print(f"  num train images * repeats / 学習画像の数×繰り返し回数: {train_dataset_group.num_train_images}")
-        accelerator.print(f"  num reg images / 正則化画像の数: {train_dataset_group.num_reg_images}")
-        accelerator.print(f"  num batches per epoch / 1epochのバッチ数: {len(train_dataloader)}")
-        accelerator.print(f"  num epochs / epoch数: {num_train_epochs}")
+        accelerator.print("running training")
+        accelerator.print(f"  num train images * repeats: {train_dataset_group.num_train_images}")
+        accelerator.print(f"  num reg images: {train_dataset_group.num_reg_images}")
+        accelerator.print(f"  num batches per epoch: {len(train_dataloader)}")
+        accelerator.print(f"  num epochs: {num_train_epochs}")
         accelerator.print(
-            f"  batch size per device / バッチサイズ: {', '.join([str(d.batch_size) for d in train_dataset_group.datasets])}"
+            f"  batch size per device: {', '.join([str(d.batch_size) for d in train_dataset_group.datasets])}"
         )
-        # accelerator.print(f"  total train batch size (with parallel & distributed & accumulation) / 総バッチサイズ（並列学習、勾配合計含む）: {total_batch_size}")
-        accelerator.print(f"  gradient accumulation steps / 勾配を合計するステップ数 = {args.gradient_accumulation_steps}")
-        accelerator.print(f"  total optimization steps / 学習ステップ数: {args.max_train_steps}")
+        accelerator.print(f"  gradient accumulation steps: {args.gradient_accumulation_steps}")
+        accelerator.print(f"  total optimization steps: {args.max_train_steps}")
 
         # TODO refactor metadata creation and move to util
         metadata = {
@@ -813,9 +823,9 @@ class NetworkTrainer:
 
                 # merge tag frequency:
                 for ds_dir_name, ds_freq_for_dir in dataset.tag_frequency.items():
-                    # あるディレクトリが複数のdatasetで使用されている場合、一度だけ数える
-                    # もともと繰り返し回数を指定しているので、キャプション内でのタグの出現回数と、それが学習で何度使われるかは一致しない
-                    # なので、ここで複数datasetの回数を合算してもあまり意味はない
+                    # If a directory is used by multiple datasets, count only once
+                    # Since the number of repetitions is originally specified, the number of times a tag appears in the caption does not match the number of times it is used in training.
+                    # Therefore, it is not very meaningful to add up the number of times for multiple datasets here.
                     if ds_dir_name in tag_frequency:
                         continue
                     tag_frequency[ds_dir_name] = ds_freq_for_dir
@@ -827,7 +837,7 @@ class NetworkTrainer:
             # conserving backward compatibility when using train_dataset_dir and reg_dataset_dir
             assert (
                 len(train_dataset_group.datasets) == 1
-            ), f"There should be a single dataset but {len(train_dataset_group.datasets)} found. This seems to be a bug. / データセットは1個だけ存在するはずですが、実際には{len(train_dataset_group.datasets)}個でした。プログラムのバグかもしれません。"
+            ), f"There should be a single dataset but {len(train_dataset_group.datasets)} found. This seems to be a bug."
 
             dataset = train_dataset_group.datasets[0]
 
@@ -938,7 +948,7 @@ class NetworkTrainer:
                 epoch_to_start = initial_step // math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
                 initial_step = 0  # do not skip
 
-        global_step = 0
+        
 
         noise_scheduler = self.get_noise_scheduler(args, accelerator.device)
 
@@ -955,6 +965,8 @@ class NetworkTrainer:
 
         loss_recorder = train_util.LossRecorder()
         del train_dataset_group
+
+        pbar.update(1)
 
         # callback for step start
         if hasattr(accelerator.unwrap_model(network), "on_step_start"):
@@ -995,12 +1007,13 @@ class NetworkTrainer:
         # For --sample_at_first
         #self.sample_images(accelerator, args, 0, global_step, accelerator.device, vae, tokenizers, text_encoder, unet)
 
+        self.global_step = 0
         # training loop
         if initial_step > 0:  # only if skip_until_initial_step is specified
             for skip_epoch in range(epoch_to_start):  # skip epochs
                 logger.info(f"skipping epoch {skip_epoch+1} because initial_step (multiplied) is {initial_step}")
                 initial_step -= len(train_dataloader)
-            global_step = initial_step
+            self.global_step = initial_step
 
         # log device and dtype for each model
         logger.info(f"unet dtype: {unet_weight_dtype}, device: {unet.device}")
@@ -1009,15 +1022,13 @@ class NetworkTrainer:
 
         clean_memory_on_device(accelerator.device)
 
-        
-        def training_loop(epoch, num_train_epochs, accelerator, network, text_encoder, 
+        progress_bar = tqdm(
+            range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps"
+            )
+        def training_loop(break_at_steps, epoch, num_train_epochs, accelerator, network, text_encoder, 
                           unet, vae, tokenizers, args, train_dataloader, initial_step, global_step, 
                           current_epoch, metadata, optimizer, lr_scheduler, loss_recorder):
-            progress_bar = tqdm(
-            range(args.max_train_steps - initial_step), smoothing=0, disable=not accelerator.is_local_main_process, desc="steps"
-            )
-            #comfy_progress_bar = ProgressBar(args.max_train_steps - initial_step)
-            #for epoch in range(epoch_to_start, num_train_epochs):
+            
             accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
             current_epoch.value = epoch + 1
 
@@ -1161,14 +1172,14 @@ class NetworkTrainer:
                     )
                     accelerator.log(logs, step=global_step)
 
-                if global_step >= args.max_train_steps:
+                if global_step >= break_at_steps:
                     break
 
             if args.logging_dir is not None:
                 logs = {"loss/epoch": loss_recorder.moving_average}
                 accelerator.log(logs, step=epoch + 1)
-
-            return global_step, current_epoch
+            self.global_step = global_step
+            return current_epoch.value
         
         self.epoch_to_start = epoch_to_start
         self.num_train_epochs = num_train_epochs
@@ -1181,7 +1192,6 @@ class NetworkTrainer:
         self.args = args
         self.train_dataloader = train_dataloader
         self.initial_step = initial_step
-        self.global_step = global_step
         self.current_epoch = current_epoch
         self.metadata = metadata
         self.optimizer = optimizer

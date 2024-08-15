@@ -1,5 +1,6 @@
 import os
 import torch
+from torchvision import transforms
 import math
 import copy
 import folder_paths
@@ -15,7 +16,6 @@ import torch
 from accelerate import Accelerator
 accelerator = Accelerator(mixed_precision='bf16', cpu=False)
 from .library.device_utils import init_ipex, clean_memory_on_device
-from .library.train_util import sample_images_common
 init_ipex()
 
 from .library import flux_models, flux_train_utils, flux_utils, sd3_train_utils, strategy_base, strategy_flux, train_util
@@ -35,11 +35,11 @@ class FluxNetworkTrainer(NetworkTrainer):
         if args.cache_text_encoder_outputs:
             assert (
                 train_dataset_group.is_text_encoder_output_cacheable()
-            ), "when caching Text Encoder output, either caption_dropout_rate, shuffle_caption, token_warmup_step or caption_tag_dropout_rate cannot be used / Text Encoderの出力をキャッシュするときはcaption_dropout_rate, shuffle_caption, token_warmup_step, caption_tag_dropout_rateは使えません"
+            ), "when caching Text Encoder output, either caption_dropout_rate, shuffle_caption, token_warmup_step or caption_tag_dropout_rate cannot be used"
 
         assert (
             args.network_train_unet_only or not args.cache_text_encoder_outputs
-        ), "network for Text Encoder cannot be trained with caching Text Encoder outputs / Text Encoderの出力をキャッシュしながらText Encoderのネットワークを学習することはできません"
+        ), "network for Text Encoder cannot be trained with caching Text Encoder outputs"
 
         train_dataset_group.verify_bucket_reso_steps(32)  # TODO check this
 
@@ -129,7 +129,7 @@ class FluxNetworkTrainer(NetworkTrainer):
     ):
         if args.cache_text_encoder_outputs:
             if not args.lowram:
-                # メモリ消費を減らす
+                # reduce memory consumption
                 logger.info("move vae and unet to cpu to save memory")
                 org_vae_device = vae.device
                 org_unet_device = unet.device
@@ -144,15 +144,13 @@ class FluxNetworkTrainer(NetworkTrainer):
             with accelerator.autocast():
                 dataset.new_cache_text_encoder_outputs(text_encoders, accelerator.is_main_process)
 
-             # cache sample prompts
+            # cache sample prompts
             self.sample_prompts_te_outputs = None
             if args.sample_prompts is not None:
                 logger.info(f"cache Text Encoder outputs for sample prompt: {args.sample_prompts}")
 
                 tokenize_strategy: strategy_flux.FluxTokenizeStrategy = strategy_base.TokenizeStrategy.get_strategy()
                 text_encoding_strategy: strategy_flux.FluxTextEncodingStrategy = strategy_base.TextEncodingStrategy.get_strategy()
-
-                #prompts = sd3_train_utils.load_prompts(args.sample_prompts)
 
                 prompts = []
                 for line in args.sample_prompts:
@@ -201,12 +199,12 @@ class FluxNetworkTrainer(NetworkTrainer):
             text_encoders[0].to(accelerator.device, dtype=weight_dtype)
             text_encoders[1].to(accelerator.device, dtype=weight_dtype)
 
-    def sample_images(self, accelerator, args, epoch, global_step, device, ae, tokenizer, text_encoder, flux):
+    def sample_images(self, accelerator, args, epoch, global_step, ae, text_encoder, flux, validation_settings):
         if not args.split_mode:
-            flux_train_utils.sample_images(
-                accelerator, args, epoch, global_step, flux, ae, text_encoder, self.sample_prompts_te_outputs
+            image_tensors = flux_train_utils.sample_images(
+                accelerator, args, epoch, global_step, flux, ae, text_encoder, self.sample_prompts_te_outputs, validation_settings
             )
-            return
+            return image_tensors
 
         class FluxUpperLowerWrapper(torch.nn.Module):
             def __init__(self, flux_upper: flux_models.FluxUpper, flux_lower: flux_models.FluxLower, device: torch.device):
@@ -228,7 +226,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         wrapper = FluxUpperLowerWrapper(self.flux_upper, flux, accelerator.device)
         clean_memory_on_device(accelerator.device)
         flux_train_utils.sample_images(
-            accelerator, args, epoch, global_step, wrapper, ae, text_encoder, self.sample_prompts_te_outputs
+            accelerator, args, epoch, global_step, flux, ae, text_encoder, self.sample_prompts_te_outputs, validation_settings
         )
         clean_memory_on_device(accelerator.device)
 
@@ -462,7 +460,7 @@ class FluxTrainModelSelect:
     RETURN_TYPES = ("TRAIN_FLUX_MODELS",)
     RETURN_NAMES = ("flux_models",)
     FUNCTION = "loadmodel"
-    CATEGORY = "TrainFlux"
+    CATEGORY = "FluxTrainer"
 
     def loadmodel(self, transformer, vae, clip_l, t5):
         
@@ -501,7 +499,7 @@ class TrainDatasetConfig:
     RETURN_TYPES = ("TOML_DATASET",)
     RETURN_NAMES = ("dataset",)
     FUNCTION = "create_config"
-    CATEGORY = "TrainFlux"
+    CATEGORY = "FluxTrainer"
 
     def create_config(self, dataset_path, class_tokens, width, height, batch_size, enable_bucket, color_aug, flip_aug, 
                   bucket_no_upscale, min_bucket_reso, max_bucket_reso):
@@ -564,16 +562,17 @@ class InitFluxTraining:
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
             "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
-            "sample_prompts": ("STRING", {"multiline": True, "default": "sample prompts", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
+            "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "default", "tooltip": "memory efficient attention mode"}),
+            "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
             },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER",)
-    RETURN_NAMES = ("network_trainer",)
+    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", )
+    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path",)
     FUNCTION = "init_training"
-    CATEGORY = "TrainFlux"
+    CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, **kwargs,):
+    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, attention_mode, **kwargs,):
         mm.soft_empty_cache()
 
         parser = setup_parser()
@@ -619,7 +618,6 @@ class InitFluxTraining:
             "t5xxl": flux_models["t5"],
             "ae": flux_models["vae"],
             "save_model_as": "safetensors",
-            "sdpa": True,
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
@@ -633,6 +631,12 @@ class InitFluxTraining:
             "loss_type": "l2",
             "optimizer_type": optimizer_type,
         }
+        attention_settings = {
+            "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
+            "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
+        }
+        config_dict.update(attention_settings.get(attention_mode, {}))
+
         if optimizer_type == "adafactor":
             config_dict["optimizer_args"] = [
                 "relative_step=False",
@@ -650,37 +654,41 @@ class InitFluxTraining:
 
         final_output_lora_path = os.path.join(output_dir, "output", output_name)
 
+        epochs_count = network_trainer.num_train_epochs
+
         trainer = {
             "network_trainer": network_trainer,
             "training_loop": training_loop,
         }
-        return (trainer, )
+        return (trainer, epochs_count, final_output_lora_path)
     
-class TrainLoop:
+class FluxTrainLoop:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
-            "epochs": ("INT", {"default": 1, "min": 1, "max": 10000, "step": 1}),
+            "steps": ("INT", {"default": 1, "min": 1, "max": 10000, "step": 1}),
             "end": ("BOOLEAN", {"default": False, "tooltip": "whether to end training"}),
              },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER", "IMAGE", "LOSSRECORDER",)
-    RETURN_NAMES = ("network_trainer", "validation_images", "loss_recorder")
-    FUNCTION = "loadmodel"
-    CATEGORY = "TrainFlux"
+    RETURN_TYPES = ("NETWORKTRAINER",)
+    RETURN_NAMES = ("network_trainer",)
+    FUNCTION = "train"
+    CATEGORY = "FluxTrainer"
 
-    def loadmodel(self, network_trainer, epochs, end):
+    def train(self, network_trainer, steps, end):
         with torch.inference_mode(False):
             training_loop = network_trainer["training_loop"]
             network_trainer = network_trainer["network_trainer"]
-            
-            print(network_trainer.num_train_epochs)
-            pbar = comfy.utils.ProgressBar(epochs)
-            for epoch in range(epochs):
-                global_step, current_epoch = training_loop(
-                    epoch=epoch,
+            initial_global_step = network_trainer.global_step
+
+            target_global_step = network_trainer.global_step + steps
+            pbar = comfy.utils.ProgressBar(steps)
+            while network_trainer.global_step < target_global_step:
+                epoch = training_loop(
+                    break_at_steps=target_global_step,
+                    epoch=network_trainer.current_epoch.value,
                     num_train_epochs=network_trainer.num_train_epochs,
                     accelerator=network_trainer.accelerator,
                     network=network_trainer.network,
@@ -698,38 +706,39 @@ class TrainLoop:
                     lr_scheduler=network_trainer.lr_scheduler,
                     loss_recorder=network_trainer.loss_recorder
                 )
-                pbar.update(1)
-                print("GLOBAL STEP: ", global_step)
-                print("CURRENT EPOCH: ", current_epoch.value)
+                pbar.update(network_trainer.global_step - initial_global_step)
+               
+                # Also break if the global steps have reached the max train steps
+                if network_trainer.global_step >= network_trainer.args.max_train_steps:
+                    break
             
-            with torch.inference_mode(True):
-                image_tensors = flux_train_utils.sample_images(
-                    accelerator, 
-                    network_trainer.args, 
-                    epoch, 
-                    global_step,
-                    network_trainer.unet,
-                    network_trainer.vae, 
-                    network_trainer.text_encoder, 
-                    network_trainer.sample_prompts_te_outputs
-                    )
-                print(image_tensors.min(), image_tensors.max())
+            # with torch.inference_mode(True):
+            #     image_tensors = network_trainer.sample_images(
+            #         network_trainer.accelerator, 
+            #         network_trainer.args, 
+            #         epoch, 
+            #         network_trainer.global_step,
+            #         network_trainer.vae,
+            #         network_trainer.text_encoder,
+            #         network_trainer.unet
+            #         )
+            #     print(image_tensors.min(), image_tensors.max(), image_tensors.shape)
 
             if end:
                 network_trainer.metadata["ss_epoch"] = str(network_trainer.num_train_epochs)
                 network_trainer.metadata["ss_training_finished_at"] = str(time.time())
 
-                network = accelerator.unwrap_model(network)
+                network = network_trainer.accelerator.unwrap_model(network_trainer.network)
 
-                accelerator.end_training()
+                network_trainer.accelerator.end_training()
 
-                train_util.save_state_on_train_end(network_trainer.args, accelerator)
+                train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
                 ckpt_name = train_util.get_last_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as)
-                network_trainer.save_model(ckpt_name, network, global_step, network_trainer.num_train_epochs, force_sync_upload=True)
+                network_trainer.save_model(ckpt_name, network, network_trainer.global_step, network_trainer.num_train_epochs, force_sync_upload=True)
                 logger.info("model saved.")
             else:
                 ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, epoch + 1)
-                network_trainer.save_model(ckpt_name, accelerator.unwrap_model(network_trainer.network), global_step, epoch + 1)
+                network_trainer.save_model(ckpt_name, accelerator.unwrap_model(network_trainer.network), network_trainer.global_step, epoch + 1)
 
                 remove_epoch_no = train_util.get_remove_epoch_no(network_trainer.args, epoch + 1)
                 if remove_epoch_no is not None:
@@ -743,7 +752,116 @@ class TrainLoop:
                 "network_trainer": network_trainer,
                 "training_loop": training_loop,
             }
-        return (trainer, (0.5 * (image_tensors + 1.0)).cpu().float(), network_trainer.loss_recorder.loss_list)
+        return (trainer, )
+
+class FluxTrainValidationSettings:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "steps": ("INT", {"default": 20, "min": 1, "max": 256, "step": 1, "tooltip": "sampling steps"}),
+            "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image width"}),
+            "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image height"}),
+            "guidance_scale": ("FLOAT", {"default": 3.5, "min": 1.0, "max": 32.0, "step": 0.05, "tooltip": "guidance scale"}),
+            "seed": ("INT", {"default": 42,"min": 0, "max": 0xffffffffffffffff, "step": 1}),
+            },
+        }
+
+    RETURN_TYPES = ("VALSETTINGS", )
+    RETURN_NAMES = ("validation_settings", )
+    FUNCTION = "set"
+    CATEGORY = "FluxTrainer"
+
+    def set(self, **kwargs):
+        validation_settings = kwargs
+        print(validation_settings)
+
+        return (validation_settings,)
+        
+class FluxTrainValidate:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "network_trainer": ("NETWORKTRAINER",),
+            },
+            "optional": {
+                "validation_settings": ("VALSETTINGS",),
+            }
+        }
+
+    RETURN_TYPES = ("NETWORKTRAINER", "IMAGE",)
+    RETURN_NAMES = ("network_trainer", "validation_images",)
+    FUNCTION = "validate"
+    CATEGORY = "FluxTrainer"
+
+    def validate(self, network_trainer, validation_settings=None):
+        training_loop = network_trainer["training_loop"]
+        network_trainer = network_trainer["network_trainer"]
+
+        with torch.inference_mode(True):
+            image_tensors = network_trainer.sample_images(
+                network_trainer.accelerator, 
+                network_trainer.args, 
+                network_trainer.current_epoch.value, 
+                network_trainer.global_step,
+                network_trainer.vae,
+                network_trainer.text_encoder,
+                network_trainer.unet,
+                validation_settings
+                )
+
+        trainer = {
+            "network_trainer": network_trainer,
+            "training_loop": training_loop,
+        }
+        return (trainer, (0.5 * (image_tensors + 1.0)).cpu().float(),)
+    
+class VisualizeLoss:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "network_trainer": ("NETWORKTRAINER",),
+             },
+        }
+
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("plot",)
+    FUNCTION = "draw"
+    CATEGORY = "FluxTrainer"
+
+    def draw(self, network_trainer):
+        import matplotlib.pyplot as plt
+        import io
+        from PIL import Image
+
+        # Example list of loss values
+        loss_values = network_trainer["network_trainer"].loss_recorder.loss_list
+
+        # Create a plot
+        fig, ax = plt.subplots()
+        ax.plot(loss_values, label='Training Loss')
+        ax.set_xlabel('Epoch')
+        ax.set_ylabel('Loss')
+        ax.set_title('Training Loss Over Time')
+        ax.legend()
+        ax.grid(True)
+
+        # Save the plot to a BytesIO object
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png')
+        plt.close(fig)
+        buf.seek(0)
+
+        # Convert the BytesIO object to a PIL Image
+        image = Image.open(buf).convert('RGB')
+
+        # Convert the PIL Image to a torch tensor
+        image_tensor = transforms.ToTensor()(image)
+        print(image_tensor.shape)
+        image_tensor = image_tensor.unsqueeze(0).permute(0, 2, 3, 1).cpu().float()
+        print(image_tensor.shape)
+
+        return image_tensor,
 
     
 
@@ -751,11 +869,17 @@ NODE_CLASS_MAPPINGS = {
     "InitFluxTraining": InitFluxTraining,
     "FluxTrainModelSelect": FluxTrainModelSelect,
     "TrainDatasetConfig": TrainDatasetConfig,
-    "TrainLoop": TrainLoop
+    "FluxTrainLoop": FluxTrainLoop,
+    "VisualizeLoss": VisualizeLoss,
+    "FluxTrainValidate": FluxTrainValidate,
+    "FluxTrainValidationSettings": FluxTrainValidationSettings
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxTraining": "Init Flux Training",
     "FluxTrainModelSelect": "FluxTrain ModelSelect",
     "TrainDatasetConfig": "Train Dataset Config",
-    "TrainLoop": "Train Loop"
+    "FluxTrainLoop": "Flux Train Loop",
+    "VisualizeLoss": "Visualize Loss",
+    "FluxTrainValidate": "Flux Train Validate",
+    "FluxTrainValidationSettings": "Flux Train Validation Settings"
 }

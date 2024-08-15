@@ -36,6 +36,7 @@ def sample_images(
     ae,
     text_encoders,
     sample_prompts_te_outputs,
+    validation_settings=None,
     prompt_replacement=None,
 ):
     # if steps == 0:
@@ -53,7 +54,7 @@ def sample_images(
     #             return
 
     logger.info("")
-    logger.info(f"generating sample images at step / サンプル画像生成 ステップ: {steps}")
+    logger.info(f"generating sample images at step: {steps}")
     #if not os.path.isfile(args.sample_prompts):
     #    logger.error(f"No prompt file / プロンプトファイルがありません: {args.sample_prompts}")
     #    return
@@ -111,6 +112,7 @@ def sample_images(
                 steps,
                 sample_prompts_te_outputs,
                 prompt_replacement,
+                validation_settings
             )
             image_tensor_list.append(image_tensor)
 
@@ -134,14 +136,22 @@ def sample_image_inference(
     steps,
     sample_prompts_te_outputs,
     prompt_replacement,
+    validation_settings=None
 ):
     assert isinstance(prompt_dict, dict)
     # negative_prompt = prompt_dict.get("negative_prompt")
-    sample_steps = prompt_dict.get("sample_steps", 20)
-    width = prompt_dict.get("width", 512)
-    height = prompt_dict.get("height", 512)
-    scale = prompt_dict.get("scale", 3.5)
-    seed = prompt_dict.get("seed")
+    if validation_settings is not None:
+        sample_steps = validation_settings["steps"]
+        width = validation_settings["width"]
+        height = validation_settings["height"]
+        scale = validation_settings["guidance_scale"]
+        seed = validation_settings["seed"]
+    else:
+        sample_steps = prompt_dict.get("sample_steps", 20)
+        width = prompt_dict.get("width", 512)
+        height = prompt_dict.get("height", 512)
+        scale = prompt_dict.get("scale", 3.5)
+        seed = prompt_dict.get("seed")
     # controlnet_image = prompt_dict.get("controlnet_image")
     prompt: str = prompt_dict.get("prompt", "")
     # sampler_name: str = prompt_dict.get("sample_sampler", args.sample_sampler)

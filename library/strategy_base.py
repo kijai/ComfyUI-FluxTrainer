@@ -107,8 +107,8 @@ class TextEncodingStrategy:
 
     @classmethod
     def set_strategy(cls, strategy):
-        if cls._strategy is not None:
-            raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
+        #if cls._strategy is not None:
+        #    raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
         cls._strategy = strategy
 
     @classmethod
@@ -139,8 +139,8 @@ class TextEncoderOutputsCachingStrategy:
 
     @classmethod
     def set_strategy(cls, strategy):
-        if cls._strategy is not None:
-            raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
+        #if cls._strategy is not None:
+        #    raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
         cls._strategy = strategy
 
     @classmethod
@@ -186,8 +186,8 @@ class LatentsCachingStrategy:
 
     @classmethod
     def set_strategy(cls, strategy):
-        if cls._strategy is not None:
-            raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
+        #if cls._strategy is not None:
+        #    raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
         cls._strategy = strategy
 
     @classmethod
@@ -260,7 +260,7 @@ class LatentsCachingStrategy:
         """
         Default implementation for cache_batch_latents. Image loading, VAE, flipping, alpha mask handling are common.
         """
-        from library import train_util  # import here to avoid circular import
+        from . import train_util  # import here to avoid circular import
 
         img_tensor, alpha_masks, original_sizes, crop_ltrbs = train_util.load_images_and_masks_for_caching(
             image_infos, alpha_mask, random_crop
