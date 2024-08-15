@@ -239,7 +239,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         return args.cache_text_encoder_outputs
 
     def encode_images_to_latents(self, args, accelerator, vae, images):
-        return vae.encode(images).latent_dist.sample()
+        return vae.encode(images)
 
     def shift_scale_latents(self, args, latents):
         return latents
@@ -556,7 +556,6 @@ class InitFluxTraining:
             "logit_mean": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "mean to use when using the logit_normal weighting scheme"}),
             "logit_std": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "std to use when using the logit_normal weighting scheme"}),
             "mode_scale": ("FLOAT", {"default": 1.29, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "Scale of mode weighting scheme. Only effective when using the mode as the weighting_scheme"}),
-            "guidance_scale": ("FLOAT", {"default": 4.0, "min": 1.0, "max": 10.0, "step": 0.01, "tooltip": "the FLUX.1 dev variant is a guidance distilled model"}),
             "timestep_sampling": (["sigmoid", "uniform", "sigma"], {"tooltip": "method to sample timestep"}),
             "sigmoid_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1, "tooltip": "Scale factor for sigmoid timestep sampling (only used when timestep-sampling is sigmoid"}),
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
@@ -710,17 +709,6 @@ class FluxTrainLoop:
                 # Also break if the global steps have reached the max train steps
                 if network_trainer.global_step >= network_trainer.args.max_train_steps:
                     break
-            
-            ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, epoch + 1)
-            network_trainer.save_model(ckpt_name, accelerator.unwrap_model(network_trainer.network), network_trainer.global_step, epoch + 1)
-
-            remove_epoch_no = train_util.get_remove_epoch_no(network_trainer.args, epoch + 1)
-            if remove_epoch_no is not None:
-                remove_ckpt_name = train_util.get_epoch_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, remove_epoch_no)
-                network_trainer.remove_model(remove_ckpt_name)
-
-            if network_trainer.args.save_state:
-                train_util.save_and_remove_state_on_epoch_end(network_trainer.args, accelerator, epoch + 1)
 
             trainer = {
                 "network_trainer": network_trainer,
@@ -728,11 +716,45 @@ class FluxTrainLoop:
             }
         return (trainer, )
 
+class FluxTrainSave:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "network_trainer": ("NETWORKTRAINER",),
+            "save_state": ("BOOLEAN", {"default": False}),
+             },
+        }
+
+    RETURN_TYPES = ("NETWORKTRAINER", "STRING",)
+    RETURN_NAMES = ("network_trainer","lora_path",)
+    FUNCTION = "endtrain"
+    CATEGORY = "FluxTrainer"
+
+    def endtrain(self, network_trainer, save_state):
+        with torch.inference_mode(False):
+            trainer = network_trainer["network_trainer"]
+            
+            ckpt_name = train_util.get_epoch_ckpt_name(trainer.args, "." + trainer.args.save_model_as, trainer.current_epoch.value + 1)
+            trainer.save_model(ckpt_name, accelerator.unwrap_model(trainer.network), trainer.global_step, trainer.current_epoch.value + 1)
+
+            remove_epoch_no = train_util.get_remove_epoch_no(trainer.args, trainer.current_epoch.value + 1)
+            if remove_epoch_no is not None:
+                remove_ckpt_name = train_util.get_epoch_ckpt_name(trainer.args, "." + trainer.args.save_model_as, remove_epoch_no)
+                trainer.remove_model(remove_ckpt_name)
+
+            if save_state:
+                train_util.save_and_remove_state_on_epoch_end(trainer.args, accelerator, trainer.current_epoch.value + 1)
+
+            lora_path = os.path.join(trainer.output_dir, "output", ckpt_name)
+            
+        return (network_trainer, lora_path)
+    
 class FluxTrainEnd:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
+            "save_state": ("BOOLEAN", {"default": True}),
              },
         }
 
@@ -741,11 +763,10 @@ class FluxTrainEnd:
     FUNCTION = "endtrain"
     CATEGORY = "FluxTrainer"
 
-    def endtrain(self, network_trainer):
+    def endtrain(self, network_trainer, save_state):
         with torch.inference_mode(False):
             training_loop = network_trainer["training_loop"]
             network_trainer = network_trainer["network_trainer"]
-            
             
             network_trainer.metadata["ss_epoch"] = str(network_trainer.num_train_epochs)
             network_trainer.metadata["ss_training_finished_at"] = str(time.time())
@@ -754,22 +775,20 @@ class FluxTrainEnd:
 
             network_trainer.accelerator.end_training()
 
-            train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
+            if save_state:
+                train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
+
             ckpt_name = train_util.get_last_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as)
             network_trainer.save_model(ckpt_name, network, network_trainer.global_step, network_trainer.num_train_epochs, force_sync_upload=True)
             logger.info("model saved.")
 
+            final_output_lora_path = os.path.join(network_trainer.output_dir, "output", network_trainer.output_name)
+
             training_loop = None
             network_trainer = None
-            mm.soft_empty_cache()           
-
-            trainer = {
-                "network_trainer": network_trainer,
-                "training_loop": training_loop,
-            }
-
-            final_output_lora_path = os.path.join(network_trainer.output_dir, "output", network_trainer.output_name)
-        return (trainer, final_output_lora_path,)
+            mm.soft_empty_cache()
+            
+        return (final_output_lora_path,)
     
 class FluxTrainValidationSettings:
     @classmethod
@@ -890,7 +909,8 @@ NODE_CLASS_MAPPINGS = {
     "VisualizeLoss": VisualizeLoss,
     "FluxTrainValidate": FluxTrainValidate,
     "FluxTrainValidationSettings": FluxTrainValidationSettings,
-    "FluxTrainEnd": FluxTrainEnd
+    "FluxTrainEnd": FluxTrainEnd,
+    "FluxTrainSave": FluxTrainSave
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxTraining": "Init Flux Training",
@@ -900,5 +920,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "VisualizeLoss": "Visualize Loss",
     "FluxTrainValidate": "Flux Train Validate",
     "FluxTrainValidationSettings": "Flux Train Validation Settings",
-    "FluxTrainEnd": "Flux Train End"
+    "FluxTrainEnd": "Flux Train End",
+    "FluxTrainSave": "Flux Train Save"
 }
