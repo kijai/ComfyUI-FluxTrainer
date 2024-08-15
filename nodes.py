@@ -629,6 +629,7 @@ class InitFluxTraining:
             "output_name": output_name,
             "loss_type": "l2",
             "optimizer_type": optimizer_type,
+            "guidance_scale": 1.0,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
