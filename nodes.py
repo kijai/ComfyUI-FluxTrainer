@@ -746,7 +746,7 @@ class FluxTrainSave:
             if save_state:
                 train_util.save_and_remove_state_on_epoch_end(trainer.args, accelerator, trainer.current_epoch.value + 1)
 
-            lora_path = os.path.join(trainer.output_dir, "output", ckpt_name)
+            lora_path = os.path.join(trainer.args.output_dir, "output", ckpt_name)
             
         return (network_trainer, lora_path)
     
@@ -783,7 +783,7 @@ class FluxTrainEnd:
             network_trainer.save_model(ckpt_name, network, network_trainer.global_step, network_trainer.num_train_epochs, force_sync_upload=True)
             logger.info("model saved.")
 
-            final_output_lora_path = os.path.join(network_trainer.output_dir, "output", network_trainer.output_name)
+            final_output_lora_path = os.path.join(network_trainer.args.output_dir, "output", network_trainer.args.output_name)
 
             training_loop = None
             network_trainer = None
