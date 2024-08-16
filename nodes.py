@@ -138,6 +138,7 @@ class InitFluxTraining:
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
             "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
+            "fp8_base": ("BOOLEAN", {"default": True, "tooltip": "use fp8 for base model"}),
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
             },
@@ -200,13 +201,12 @@ class InitFluxTraining:
             "gradient_checkpointing": True,
             "save_precision": "bf16",
             "network_module": "networks.lora_flux",
-            "fp8_base": True,
             "dataset_config": dataset,
             "output_dir": output_dir,
             "output_name": output_name,
             "loss_type": "l2",
             "optimizer_type": optimizer_type,
-            "guidance_scale": 1.0,
+            "guidance_scale": 3.5,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
