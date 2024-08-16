@@ -209,8 +209,8 @@ class InitFluxTraining:
             "guidance_scale": 3.5,
         }
         attention_settings = {
-            "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
-            "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
+            "sdpa": {"mem_eff_attn": True, "xformers": False, "sdpa": True},
+            "xformers": {"mem_eff_attn": True, "xformers": True, "sdpa": False}
         }
         config_dict.update(attention_settings.get(attention_mode, {}))
 
@@ -297,7 +297,7 @@ class FluxTrainSave:
             trainer = network_trainer["network_trainer"]
             
             ckpt_name = train_util.get_epoch_ckpt_name(trainer.args, "." + trainer.args.save_model_as, trainer.current_epoch.value + 1)
-            trainer.save_model(ckpt_name, network_trainer.accelerator.unwrap_model(trainer.network), trainer.global_step, trainer.current_epoch.value + 1)
+            trainer.save_model(ckpt_name, trainer.accelerator.unwrap_model(trainer.network), trainer.global_step, trainer.current_epoch.value + 1)
 
             remove_epoch_no = train_util.get_remove_epoch_no(trainer.args, trainer.current_epoch.value + 1)
             if remove_epoch_no is not None:
@@ -305,7 +305,7 @@ class FluxTrainSave:
                 trainer.remove_model(remove_ckpt_name)
 
             if save_state:
-                train_util.save_and_remove_state_on_epoch_end(trainer.args, network_trainer.accelerator, trainer.current_epoch.value + 1)
+                train_util.save_and_remove_state_on_epoch_end(trainer.args, trainer.accelerator, trainer.current_epoch.value + 1)
 
             lora_path = os.path.join(trainer.args.output_dir, "output", ckpt_name)
             
