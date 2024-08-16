@@ -1025,13 +1025,30 @@ class NetworkTrainer:
 
         clean_memory_on_device(accelerator.device)
 
+        self.epoch_to_start = epoch_to_start
+        self.num_train_epochs = num_train_epochs
+        self.accelerator = accelerator
+        self.network = network
+        self.text_encoder = text_encoder
+        self.unet = unet
+        self.vae = vae
+        self.tokenizers = tokenizers
+        self.args = args
+        self.train_dataloader = train_dataloader
+        self.initial_step = initial_step
+        self.current_epoch = current_epoch
+        self.metadata = metadata
+        self.optimizer = optimizer
+        self.lr_scheduler = lr_scheduler
+        self.loss_recorder = loss_recorder
+        self.save_model = save_model
+        self.remove_model = remove_model
+
         progress_bar = tqdm(
             range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps"
             )
-        def training_loop(break_at_steps, epoch, num_train_epochs, accelerator, network, text_encoder, 
-                          unet, vae, tokenizers, args, train_dataloader, initial_step, global_step, 
-                          current_epoch, metadata, optimizer, lr_scheduler, loss_recorder):
-            
+        def training_loop(break_at_steps, epoch):
+            steps_done = 0
             accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
             current_epoch.value = epoch + 1
 
@@ -1040,14 +1057,14 @@ class NetworkTrainer:
             accelerator.unwrap_model(network).on_epoch_start(text_encoder, unet)
 
             skipped_dataloader = None
-            if initial_step > 0:
-                skipped_dataloader = accelerator.skip_first_batches(train_dataloader, initial_step - 1)
-                initial_step = 1
+            if self.initial_step > 0:
+                skipped_dataloader = accelerator.skip_first_batches(train_dataloader, self.initial_step - 1)
+                self.initial_step = 1
 
             for step, batch in enumerate(skipped_dataloader or train_dataloader):
-                current_step.value = global_step
-                if initial_step > 0:
-                    initial_step -= 1
+                current_step.value = self.global_step
+                if self.initial_step > 0:
+                    self.initial_step -= 1
                     continue
 
                 with accelerator.accumulate(training_model):
@@ -1158,7 +1175,7 @@ class NetworkTrainer:
                 # Checks if the accelerator has performed an optimization step behind the scenes
                 if accelerator.sync_gradients:
                     progress_bar.update(1)
-                    global_step += 1
+                    self.global_step += 1
 
                 current_loss = loss.detach().item()
                 loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
@@ -1173,35 +1190,19 @@ class NetworkTrainer:
                     logs = self.generate_step_logs(
                         args, current_loss, avr_loss, lr_scheduler, lr_descriptions, keys_scaled, mean_norm, maximum_norm
                     )
-                    accelerator.log(logs, step=global_step)
+                    accelerator.log(logs, step=self.global_step)
 
-                if global_step >= break_at_steps:
+                if self.global_step >= break_at_steps:
                     break
+                steps_done += 1
 
             if args.logging_dir is not None:
                 logs = {"loss/epoch": loss_recorder.moving_average}
                 accelerator.log(logs, step=epoch + 1)
-            self.global_step = global_step
-            return current_epoch.value
+  
+            return steps_done
         
-        self.epoch_to_start = epoch_to_start
-        self.num_train_epochs = num_train_epochs
-        self.accelerator = accelerator
-        self.network = network
-        self.text_encoder = text_encoder
-        self.unet = unet
-        self.vae = vae
-        self.tokenizers = tokenizers
-        self.args = args
-        self.train_dataloader = train_dataloader
-        self.initial_step = initial_step
-        self.current_epoch = current_epoch
-        self.metadata = metadata
-        self.optimizer = optimizer
-        self.lr_scheduler = lr_scheduler
-        self.loss_recorder = loss_recorder
-        self.save_model = save_model
-        self.remove_model = remove_model
+        
 
         return training_loop
 
