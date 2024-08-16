@@ -153,7 +153,7 @@ class InitFluxTraining:
         mm.soft_empty_cache()
 
         parser = setup_parser()
-        args = parser.parse_known_args()
+        args, _ = parser.parse_known_args()
 
         if kwargs.get("cache_latents") == "memory":
             kwargs["cache_latents"] = True
