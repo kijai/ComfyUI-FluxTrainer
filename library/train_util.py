@@ -4740,6 +4740,7 @@ def prepare_accelerator(args: argparse.Namespace):
         kwargs_handlers=kwargs_handlers,
         dynamo_backend=dynamo_backend,
         deepspeed_plugin=deepspeed_plugin,
+        mixed_precision='bf16',
     )
     print("accelerator device:", accelerator.device)
     return accelerator
