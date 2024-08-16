@@ -6,4 +6,4 @@ venv
 build
 .vscode
 wandb
-output
+output*

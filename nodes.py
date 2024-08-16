@@ -510,7 +510,7 @@ class TrainDatasetConfig:
             "min_bucket_reso": ("INT",{"min": 64, "default": 256}),
             "max_bucket_reso": ("INT",{"min": 64, "default": 1024}),
             "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
-            "flip_aug": ("BOOLEAN",{"default": False},{"tooltip": "enable horizontal flip augmentation"}),
+            "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
             },
         }
 
