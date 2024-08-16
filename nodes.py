@@ -60,7 +60,7 @@ class TrainDatasetConfig:
         return {"required": {
             "width": ("INT",{"min": 64, "default": 512}),
             "height": ("INT",{"min": 64, "default": 512}),
-            "batch_size": ("INT",{"min": 1, "default": 2}),
+            "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more. "}),
             "dataset_path": ("STRING",{"multiline": True, "default": ""}),
             "class_tokens": ("STRING",{"multiline": True, "default": ""}),
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
@@ -209,8 +209,8 @@ class InitFluxTraining:
             "guidance_scale": 3.5,
         }
         attention_settings = {
-            "sdpa": {"mem_eff_attn": True, "xformers": False, "sdpa": True},
-            "xformers": {"mem_eff_attn": True, "xformers": True, "sdpa": False}
+            "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
+            "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
         }
         config_dict.update(attention_settings.get(attention_mode, {}))
 
@@ -396,17 +396,16 @@ class FluxTrainValidate:
         training_loop = network_trainer["training_loop"]
         network_trainer = network_trainer["network_trainer"]
 
-        with torch.inference_mode(True):
-            image_tensors = network_trainer.sample_images(
-                network_trainer.accelerator, 
-                network_trainer.args, 
-                network_trainer.current_epoch.value, 
-                network_trainer.global_step,
-                network_trainer.vae,
-                network_trainer.text_encoder,
-                network_trainer.unet,
-                validation_settings
-                )
+        image_tensors = network_trainer.sample_images(
+            network_trainer.accelerator, 
+            network_trainer.args, 
+            network_trainer.current_epoch.value, 
+            network_trainer.global_step,
+            network_trainer.vae,
+            network_trainer.text_encoder,
+            network_trainer.unet,
+            validation_settings
+            )
 
         trainer = {
             "network_trainer": network_trainer,
