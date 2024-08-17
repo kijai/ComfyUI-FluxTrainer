@@ -92,16 +92,13 @@ class LoRAModule(torch.nn.Module):
                 return org_forwarded
 
         lx = self.lora_down(x)
-        print("LX:", lx.shape)
 
         # normal dropout
         if self.dropout is not None and self.training:
-            print("DROPOUT: ", self.dropout)
             lx = torch.nn.functional.dropout(lx, p=self.dropout)
 
         # rank dropout
         if self.rank_dropout is not None and self.training:
-            print("RANK DROPOUT: ", self.rank_dropout)
             mask = torch.rand((lx.size(0), self.lora_dim), device=lx.device) > self.rank_dropout
             if len(lx.size()) == 3:
                 mask = mask.unsqueeze(1)  # for Text Encoder
@@ -114,7 +111,6 @@ class LoRAModule(torch.nn.Module):
             scale = self.scale * (1.0 / (1.0 - self.rank_dropout))  # redundant for readability
         else:
             scale = self.scale
-        print("LORA APPLYING AT SCALE: ",scale)
 
         lx = self.lora_up(lx)
 

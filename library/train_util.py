@@ -168,13 +168,14 @@ class ImageInfo:
 
 
 class BucketManager:
-    def __init__(self, no_upscale, max_reso, min_size, max_size, reso_steps) -> None:
-        if max_size is not None:
-            if max_reso is not None:
-                assert max_size >= max_reso[0], "the max_size should be larger than the width of max_reso"
-                assert max_size >= max_reso[1], "the max_size should be larger than the height of max_reso"
-            if min_size is not None:
-                assert max_size >= min_size, "the max_size should be larger than the min_size"
+    def __init__(self, no_upscale, max_reso, min_size, max_sizes, reso_steps) -> None:
+        if max_sizes is not None:
+            for max_size in max_sizes:
+                if max_reso is not None:
+                    assert max_size <= max_reso[0], "each max_size should be smaller than the width of max_reso"
+                    assert max_size <= max_reso[1], "each max_size should be smaller than the height of max_reso"
+                if min_size is not None:
+                    assert max_size >= min_size, "each max_size should be larger than the min_size"
 
         self.no_upscale = no_upscale
         if max_reso is None:
@@ -184,7 +185,7 @@ class BucketManager:
             self.max_reso = max_reso
             self.max_area = max_reso[0] * max_reso[1]
         self.min_size = min_size
-        self.max_size = max_size
+        self.max_sizes = max_sizes
         self.reso_steps = reso_steps
 
         self.resos = []
@@ -216,7 +217,7 @@ class BucketManager:
         self.reso_to_id = sorted_reso_to_id
 
     def make_buckets(self):
-        resos = model_util.make_bucket_resolutions(self.max_reso, self.min_size, self.max_size, self.reso_steps)
+        resos = model_util.make_bucket_resolutions(self.max_reso, self.min_size, self.max_sizes, self.reso_steps)
         self.set_predefined_resos(resos)
 
     def set_predefined_resos(self, resos):
@@ -623,7 +624,7 @@ class BaseDataset(torch.utils.data.Dataset):
         self.enable_bucket = False
         self.bucket_manager: BucketManager = None  # not initialized
         self.min_bucket_reso = None
-        self.max_bucket_reso = None
+        self.max_bucket_resos = None
         self.bucket_reso_steps = None
         self.bucket_no_upscale = None
         self.bucket_info = None  # for metadata
@@ -890,7 +891,7 @@ class BaseDataset(torch.utils.data.Dataset):
                     self.bucket_no_upscale,
                     (self.width, self.height),
                     self.min_bucket_reso,
-                    self.max_bucket_reso,
+                    self.max_bucket_resos,
                     self.bucket_reso_steps,
                 )
                 if not self.bucket_no_upscale:
@@ -1650,7 +1651,7 @@ class DreamBoothDataset(BaseDataset):
         network_multiplier: float,
         enable_bucket: bool,
         min_bucket_reso: int,
-        max_bucket_reso: int,
+        max_bucket_resos: List[int],
         bucket_reso_steps: int,
         bucket_no_upscale: bool,
         prior_loss_weight: float,
@@ -1670,16 +1671,17 @@ class DreamBoothDataset(BaseDataset):
             assert (
                 min(resolution) >= min_bucket_reso
             ), f"min_bucket_reso must be equal or less than resolution / min_bucket_resoは最小解像度より大きくできません。解像度を大きくするかmin_bucket_resoを小さくしてください"
-            assert (
-                max(resolution) <= max_bucket_reso
-            ), f"max_bucket_reso must be equal or greater than resolution / max_bucket_resoは最大解像度より小さくできません。解像度を小さくするかmin_bucket_resoを大きくしてください"
+            for max_bucket_reso in max_bucket_resos:
+                assert (
+                    max(resolution) >= max_bucket_reso
+                ), f"max_bucket_reso must be equal or greater than resolution / max_bucket_resoは最大解像度より小さくできません。解像度を小さくするかmin_bucket_resoを大きくしてください"
             self.min_bucket_reso = min_bucket_reso
-            self.max_bucket_reso = max_bucket_reso
+            self.max_bucket_resos = max_bucket_resos
             self.bucket_reso_steps = bucket_reso_steps
             self.bucket_no_upscale = bucket_no_upscale
         else:
             self.min_bucket_reso = None
-            self.max_bucket_reso = None
+            self.max_bucket_resos = None
             self.bucket_reso_steps = None  # この情報は使われない
             self.bucket_no_upscale = False
 
@@ -1882,7 +1884,7 @@ class FineTuningDataset(BaseDataset):
         network_multiplier: float,
         enable_bucket: bool,
         min_bucket_reso: int,
-        max_bucket_reso: int,
+        max_bucket_resos: List[int],
         bucket_reso_steps: int,
         bucket_no_upscale: bool,
         debug_dataset: bool,
@@ -2046,7 +2048,7 @@ class FineTuningDataset(BaseDataset):
             self.enable_bucket = enable_bucket
             if self.enable_bucket:
                 self.min_bucket_reso = min_bucket_reso
-                self.max_bucket_reso = max_bucket_reso
+                self.max_bucket_resos = max_bucket_resos
                 self.bucket_reso_steps = bucket_reso_steps
                 self.bucket_no_upscale = bucket_no_upscale
         else:
@@ -2105,7 +2107,7 @@ class ControlNetDataset(BaseDataset):
         network_multiplier: float,
         enable_bucket: bool,
         min_bucket_reso: int,
-        max_bucket_reso: int,
+        max_bucket_resos: List[int],
         bucket_reso_steps: int,
         bucket_no_upscale: bool,
         debug_dataset: float,
@@ -2152,7 +2154,7 @@ class ControlNetDataset(BaseDataset):
             network_multiplier,
             enable_bucket,
             min_bucket_reso,
-            max_bucket_reso,
+            max_bucket_resos,
             bucket_reso_steps,
             bucket_no_upscale,
             1.0,
@@ -4757,8 +4759,10 @@ def prepare_dtype(args: argparse.Namespace):
         save_dtype = torch.float16
     elif args.save_precision == "bf16":
         save_dtype = torch.bfloat16
-    elif args.save_precision == "float":
+    elif args.save_precision == "fp32":
         save_dtype = torch.float32
+    elif args.save_precision == "fp8_e4m3fn":
+        save_dtype = torch.float8_e4m3fn
 
     return weight_dtype, save_dtype
 

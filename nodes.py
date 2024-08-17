@@ -66,7 +66,7 @@ class TrainDatasetConfig:
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
             "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "bucket reso is defined by image size automatically"}),
             "min_bucket_reso": ("INT",{"min": 64, "default": 256}),
-            "max_bucket_reso": ("INT",{"min": 64, "default": 1024}),
+            "max_bucket_resos": ("STRING",{"default": "1024, 768, 512"}),
             "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
             "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
             },
@@ -78,7 +78,7 @@ class TrainDatasetConfig:
     CATEGORY = "FluxTrainer"
 
     def create_config(self, dataset_path, class_tokens, width, height, batch_size, enable_bucket, color_aug, flip_aug, 
-                  bucket_no_upscale, min_bucket_reso, max_bucket_reso):
+                  bucket_no_upscale, min_bucket_reso, max_bucket_resos):
         import toml
 
         dataset = {
@@ -94,7 +94,7 @@ class TrainDatasetConfig:
                    "enable_bucket": enable_bucket,
                    "bucket_no_upscale": bucket_no_upscale,
                    "min_bucket_reso": min_bucket_reso,
-                   "max_bucket_reso": max_bucket_reso,
+                   "max_bucket_resos": [int(x.strip()) for x in max_bucket_resos.split(',')],
                    "color_aug": color_aug,
                    "flip_aug": flip_aug,
                    "subsets": [
@@ -140,6 +140,7 @@ class InitFluxTraining:
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
             "fp8_base": ("BOOLEAN", {"default": True, "tooltip": "use fp8 for base model"}),
             "training_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "the actual dtype training uses"}),
+            "save_dtype": (["fp32", "fp16", "bf16", "fp8_e4m3fn"], {"default": "bf16", "tooltip": "the dtype to save checkpoints as"}),
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
             },
@@ -150,9 +151,9 @@ class InitFluxTraining:
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, attention_mode, training_dtype, **kwargs,):
+    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, attention_mode, training_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
-
+        
         parser = setup_parser()
         args, _ = parser.parse_known_args()
 
@@ -189,6 +190,7 @@ class InitFluxTraining:
 
         config_dict = {
             "sample_prompts": prompts,
+            "save_precision": save_dtype,
             "mixed_precision": "bf16",
             "num_cpu_threads_per_process": 1,
             "pretrained_model_name_or_path": flux_models["transformer"],

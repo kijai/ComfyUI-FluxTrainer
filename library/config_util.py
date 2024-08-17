@@ -114,7 +114,7 @@ class DreamBoothDatasetParams(BaseDatasetParams):
     batch_size: int = 1
     enable_bucket: bool = False
     min_bucket_reso: int = 256
-    max_bucket_reso: int = 1024
+    max_bucket_resos: List[int] = [1024],
     bucket_reso_steps: int = 64
     bucket_no_upscale: bool = False
     prior_loss_weight: float = 1.0
@@ -125,7 +125,7 @@ class FineTuningDatasetParams(BaseDatasetParams):
     batch_size: int = 1
     enable_bucket: bool = False
     min_bucket_reso: int = 256
-    max_bucket_reso: int = 1024
+    max_bucket_resos: List[int] = [1024],
     bucket_reso_steps: int = 64
     bucket_no_upscale: bool = False
 
@@ -135,7 +135,7 @@ class ControlNetDatasetParams(BaseDatasetParams):
     batch_size: int = 1
     enable_bucket: bool = False
     min_bucket_reso: int = 256
-    max_bucket_reso: int = 1024
+    max_bucket_resos: List[int] = [1024],
     bucket_reso_steps: int = 64
     bucket_no_upscale: bool = False
 
@@ -236,7 +236,7 @@ class ConfigSanitizer:
         "bucket_no_upscale": bool,
         "bucket_reso_steps": int,
         "enable_bucket": bool,
-        "max_bucket_reso": int,
+        "max_bucket_resos": list,
         "min_bucket_reso": int,
         "resolution": functools.partial(__validate_and_convert_scalar_or_twodim.__func__, int),
         "network_multiplier": float,
@@ -505,7 +505,7 @@ def generate_dataset_group_by_blueprint(dataset_group_blueprint: DatasetGroupBlu
                 dedent(
                     f"""\
         min_bucket_reso: {dataset.min_bucket_reso}
-        max_bucket_reso: {dataset.max_bucket_reso}
+        max_bucket_resos: {dataset.max_bucket_resos}
         bucket_reso_steps: {dataset.bucket_reso_steps}
         bucket_no_upscale: {dataset.bucket_no_upscale}
       \n"""

@@ -765,7 +765,7 @@ class NetworkTrainer:
                     "resolution": (dataset.width, dataset.height),
                     "enable_bucket": bool(dataset.enable_bucket),
                     "min_bucket_reso": dataset.min_bucket_reso,
-                    "max_bucket_reso": dataset.max_bucket_reso,
+                    "max_bucket_resos": dataset.max_bucket_resos,
                     "tag_frequency": dataset.tag_frequency,
                     "bucket_info": dataset.bucket_info,
                 }
