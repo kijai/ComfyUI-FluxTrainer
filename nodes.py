@@ -208,7 +208,7 @@ class InitFluxTraining:
             "network_module": "networks.lora_flux",
             "dataset_config": dataset,
             "output_dir": output_dir,
-            "output_name": f"{output_name}_rank{kwargs.get["network_dim"]}_{save_dtype}",
+            "output_name": f"{output_name}_rank{kwargs.get("network_dim")}_{save_dtype}",
             "loss_type": "l2",
             "optimizer_type": optimizer_type,
             "guidance_scale": 3.5,
