@@ -25,7 +25,7 @@ setup_logging()
 import logging
 
 logger = logging.getLogger(__name__)
-
+from comfy.utils import ProgressBar
 
 def sample_images(
     accelerator: Accelerator,
@@ -39,26 +39,10 @@ def sample_images(
     validation_settings=None,
     prompt_replacement=None,
 ):
-    # if steps == 0:
-    #     if not args.sample_at_first:
-    #         return
-    # else:
-    #     if args.sample_every_n_steps is None and args.sample_every_n_epochs is None:
-    #         return
-    #     if args.sample_every_n_epochs is not None:
-    #         # sample_every_n_steps は無視する
-    #         if epoch is None or epoch % args.sample_every_n_epochs != 0:
-    #             return
-    #     else:
-    #         if steps % args.sample_every_n_steps != 0 or epoch is not None:  # steps is not divisible or end of epoch
-    #             return
 
     logger.info("")
     logger.info(f"generating sample images at step: {steps}")
-    #if not os.path.isfile(args.sample_prompts):
-    #    logger.error(f"No prompt file / プロンプトファイルがありません: {args.sample_prompts}")
-    #    return
-
+   
     #distributed_state = PartialState()  # for multi gpu distributed inference. this is a singleton, so it's safe to use it here
 
     # unwrap unet and text_encoder(s)
@@ -300,10 +284,12 @@ def denoise(
     print("IMAGE DTYPE: ", img.dtype)
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
     print("GUIDANCE VECTOR: ", guidance_vec)
+    comfy_pbar = ProgressBar(total=len(timesteps))
     for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
         pred = model(img=img, img_ids=img_ids, txt=txt, txt_ids=txt_ids, y=vec, timesteps=t_vec, guidance=guidance_vec)
 
         img = img + (t_prev - t_curr) * pred
+        comfy_pbar.update(1)
 
     return img

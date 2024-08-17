@@ -6,8 +6,9 @@ import folder_paths
 import comfy.model_management as mm
 import comfy.utils
 import toml
+import json
 import time
-
+from pathlib import Path
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
 from .flux_train_network_comfy import FluxNetworkTrainer
@@ -69,6 +70,7 @@ class TrainDatasetConfig:
             "max_bucket_resos": ("STRING",{"default": "1024, 768, 512"}),
             "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
             "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
+            "dataset_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
             },
         }
 
@@ -77,7 +79,7 @@ class TrainDatasetConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, dataset_path, class_tokens, width, height, batch_size, enable_bucket, color_aug, flip_aug, 
+    def create_config(self, dataset_path, class_tokens, width, height, batch_size, dataset_repeats, enable_bucket, color_aug, flip_aug, 
                   bucket_no_upscale, min_bucket_reso, max_bucket_resos):
         
 
@@ -89,7 +91,7 @@ class TrainDatasetConfig:
            "datasets": [
                {
                    "resolution": (width, height),
-                   "batch_size": batch_size,  
+                   "batch_size": batch_size,
                    "keep_tokens": 2,
                    "enable_bucket": enable_bucket,
                    "bucket_no_upscale": bucket_no_upscale,
@@ -106,15 +108,18 @@ class TrainDatasetConfig:
                }
            ]
         }
-        
-        return (toml.dumps(dataset),)
+        dataset_settings = {
+            "repeats": dataset_repeats,
+            "dataset": toml.dumps(dataset)
+        }
+        return (dataset_settings,)
     
 class InitFluxTraining:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
-            "dataset": ("TOML_DATASET",),
+            "dataset_settings": ("TOML_DATASET",),
             "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False}),
             "network_dim": ("INT", {"default": 4, "min": 1, "max": 256, "step": 1, "tooltip": "network dim"}),
@@ -152,8 +157,11 @@ class InitFluxTraining:
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, attention_mode, training_dtype, save_dtype, **kwargs,):
+    def init_training(self, flux_models, dataset_settings, sample_prompts, output_name, optimizer_type, attention_mode, training_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
+
+        dataset = dataset_settings["dataset"]
+        dataset_repeats = dataset_settings["repeats"]
         
         parser = setup_parser()
         args, _ = parser.parse_known_args()
@@ -193,6 +201,7 @@ class InitFluxTraining:
         config_dict = {
             "sample_prompts": prompts,
             "save_precision": save_dtype,
+            "dataset_repeats": dataset_repeats,
             "mixed_precision": "bf16",
             "num_cpu_threads_per_process": 1,
             "pretrained_model_name_or_path": flux_models["transformer"],
@@ -309,16 +318,16 @@ class FluxTrainSave:
         with torch.inference_mode(False):
             trainer = network_trainer["network_trainer"]
             
-            ckpt_name = train_util.get_epoch_ckpt_name(trainer.args, "." + trainer.args.save_model_as, trainer.current_epoch.value + 1)
+            ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, trainer.global_step)
             trainer.save_model(ckpt_name, trainer.accelerator.unwrap_model(trainer.network), trainer.global_step, trainer.current_epoch.value + 1)
 
-            remove_epoch_no = train_util.get_remove_epoch_no(trainer.args, trainer.current_epoch.value + 1)
-            if remove_epoch_no is not None:
-                remove_ckpt_name = train_util.get_epoch_ckpt_name(trainer.args, "." + trainer.args.save_model_as, remove_epoch_no)
+            remove_step_no = train_util.get_remove_step_no(trainer.args, trainer.global_step)
+            if remove_step_no is not None:
+                remove_ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, remove_step_no)
                 trainer.remove_model(remove_ckpt_name)
 
             if save_state:
-                train_util.save_and_remove_state_on_epoch_end(trainer.args, trainer.accelerator, trainer.current_epoch.value + 1)
+                train_util.save_and_remove_state_stepwise(trainer.args, trainer.accelerator, trainer.global_step)
 
             lora_path = os.path.join(trainer.args.output_dir, "output", ckpt_name)
             
@@ -333,8 +342,8 @@ class FluxTrainEnd:
              },
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("lora_path",)
+    RETURN_TYPES = ("STRING", "STRING",)
+    RETURN_NAMES = ("lora_path", "metadata",)
     FUNCTION = "endtrain"
     CATEGORY = "FluxTrainer"
 
@@ -359,11 +368,14 @@ class FluxTrainEnd:
 
             final_output_lora_path = os.path.join(network_trainer.args.output_dir, "output", network_trainer.args.output_name)
 
+            # metadata
+            metadata = json.dumps(network_trainer.metadata, indent=2)
+
             training_loop = None
             network_trainer = None
             mm.soft_empty_cache()
             
-        return (final_output_lora_path,)
+        return (final_output_lora_path, metadata)
     
 class FluxTrainValidationSettings:
     @classmethod
@@ -467,9 +479,7 @@ class VisualizeLoss:
 
         # Convert the PIL Image to a torch tensor
         image_tensor = transforms.ToTensor()(image)
-        print(image_tensor.shape)
         image_tensor = image_tensor.unsqueeze(0).permute(0, 2, 3, 1).cpu().float()
-        print(image_tensor.shape)
 
         return image_tensor,
 
@@ -668,11 +678,13 @@ class FluxKohyaInferenceSampler:
         ):
             # this is ignored for schnell
             guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
+            comfy_pbar = comfy.utils.ProgressBar(total=len(timesteps))
             for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
                 t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
                 pred = model(img=img, img_ids=img_ids, txt=txt, txt_ids=txt_ids, y=vec, timesteps=t_vec, guidance=guidance_vec)
 
                 img = img + (t_prev - t_curr) * pred
+                comfy_pbar.update(1)
 
             return img
         def do_sample(
@@ -729,6 +741,92 @@ class FluxKohyaInferenceSampler:
 
         return ((0.5 * (x + 1.0)).cpu().float(),)   
 
+class UploadToHuggingFace:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {
+            "required": {
+                "network_trainer": ("NETWORKTRAINER",),
+                "source_path": ("STRING", {"default": ""}),
+                "repo_id": ("STRING",{"default": ""}),
+                "path_in_repo": ("STRING",{"default": "model"}),
+                "revision": ("STRING", {"default": "main"}),
+                "private": ("BOOLEAN", {"default": True, "tooltip": "If creating a new repo, leave it private"}),
+             },
+             "optional": {
+                "token": ("STRING", {"default": "","tooltip":"DO NOT LEAVE IN THE NODE or it might save in metadata, can also use the hf_token.json"}),
+             }
+        }
+
+    RETURN_TYPES = ("STRING",)
+    RETURN_NAMES = ("status",)
+    FUNCTION = "upload"
+    CATEGORY = "FluxTrainer"
+
+    def upload(self, source_path, network_trainer, repo_id, path_in_repo, private, revision,token):
+        from huggingface_hub import HfApi
+        
+        with open(os.path.join(script_directory, "hf_token.json"), "r") as file:
+            token_data = json.load(file)
+        token = token_data["hf_token"]
+
+        # Save metadata to a JSON file
+        metadata = network_trainer["network_trainer"].metadata
+        metadata_file_path = Path(source_path) / "metadata.json"
+        with open(metadata_file_path, 'w') as f:
+            json.dump(metadata, f)
+
+        repo_type = "model"
+        api = HfApi(token=token)
+
+        try:
+            api.repo_info(repo_id=repo_id, revision=revision, repo_type=repo_type)
+            repo_exists = True
+        except:
+            repo_exists = False
+        
+        if not repo_exists(repo_id=repo_id, repo_type=repo_type, token=token):
+            try:
+                api.create_repo(repo_id=repo_id, repo_type=repo_type, private=private)
+            except Exception as e:  # Checked for RepositoryNotFoundError, but other exceptions could be problematic
+                logger.error("===========================================")
+                logger.error(f"failed to create HuggingFace repo: {e}")
+                logger.error("===========================================")
+
+        is_folder = (type(source_path) == str and os.path.isdir(source_path)) or (isinstance(source_path, Path) and source_path.is_dir())
+
+        try:
+            if is_folder:
+                api.upload_folder(
+                    repo_id=repo_id,
+                    repo_type=repo_type,
+                    folder_path=source_path,
+                    path_in_repo=path_in_repo,
+                )
+            else:
+                api.upload_file(
+                    repo_id=repo_id,
+                    repo_type=repo_type,
+                    path_or_fileobj=source_path,
+                    path_in_repo=path_in_repo,
+                )
+            # Upload the metadata file separately if it's not a folder upload
+            if not is_folder:
+                api.upload_file(
+                    repo_id=repo_id,
+                    repo_type=repo_type,
+                    path_or_fileobj=str(metadata_file_path),
+                    path_in_repo=path_in_repo + '/metadata.json',
+                )
+            status = "Uploaded to HuggingFace succesfully"
+        except Exception as e:  # RuntimeErrorを確認済みだが他にあると困るので
+            logger.error("===========================================")
+            logger.error(f"failed to upload to HuggingFace / HuggingFaceへのアップロードに失敗しました : {e}")
+            logger.error("===========================================")
+            status = f"Failed to upload to HuggingFace {e}"
+            
+        return (status,)
+
 NODE_CLASS_MAPPINGS = {
     "InitFluxTraining": InitFluxTraining,
     "FluxTrainModelSelect": FluxTrainModelSelect,
@@ -739,7 +837,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainValidationSettings": FluxTrainValidationSettings,
     "FluxTrainEnd": FluxTrainEnd,
     "FluxTrainSave": FluxTrainSave,
-    "FluxKohyaInferenceSampler": FluxKohyaInferenceSampler
+    "FluxKohyaInferenceSampler": FluxKohyaInferenceSampler,
+    "UploadToHuggingFace": UploadToHuggingFace
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxTraining": "Init Flux Training",
@@ -751,5 +850,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainValidationSettings": "Flux Train Validation Settings",
     "FluxTrainEnd": "Flux Train End",
     "FluxTrainSave": "Flux Train Save",
-    "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler"
+    "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler",
+    "UploadToHuggingFace": "Upload To HuggingFace"
 }

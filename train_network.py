@@ -913,7 +913,7 @@ class NetworkTrainer:
             # if initial_epoch or initial_step is specified, steps_from_state is ignored even when resuming
             if steps_from_state is not None:
                 logger.warning(
-                    "steps from the state is ignored because initial_step is specified / initial_stepが指定されているため、stateからのステップ数は無視されます"
+                    "steps from the state is ignored because initial_step is specified"
                 )
             if args.initial_step is not None:
                 initial_step = args.initial_step
@@ -931,7 +931,7 @@ class NetworkTrainer:
         if initial_step > 0:
             assert (
                 args.max_train_steps > initial_step
-            ), f"max_train_steps should be greater than initial step / max_train_stepsは初期ステップより大きい必要があります: {args.max_train_steps} vs {initial_step}"
+            ), f"max_train_steps should be greater than initial step: {args.max_train_steps} vs {initial_step}"
 
         epoch_to_start = 0
         if initial_step > 0:
@@ -939,9 +939,9 @@ class NetworkTrainer:
                 # if skip_until_initial_step is specified, load data and discard it to ensure the same data is used
                 if not args.resume:
                     logger.info(
-                        f"initial_step is specified but not resuming. lr scheduler will be started from the beginning / initial_stepが指定されていますがresumeしていないため、lr schedulerは最初から始まります"
+                        f"initial_step is specified but not resuming. lr scheduler will be started from the beginning"
                     )
-                logger.info(f"skipping {initial_step} steps / {initial_step}ステップをスキップします")
+                logger.info(f"skipping {initial_step} steps")
                 initial_step *= args.gradient_accumulation_steps
 
                 # set epoch to start to make initial_step less than len(train_dataloader)
@@ -1074,11 +1074,11 @@ class NetworkTrainer:
                         latents = batch["latents"].to(accelerator.device).to(dtype=weight_dtype)
                     else:
                         with torch.no_grad():
-                            # latentに変換
+                            # encode latents
                             latents = self.encode_images_to_latents(args, accelerator, vae, batch["images"].to(vae_dtype))
                             latents = latents.to(dtype=weight_dtype)
 
-                            # NaNが含まれていれば警告を表示し0に置き換える
+                            # NaN check
                             if torch.any(torch.isnan(latents)):
                                 accelerator.print("NaN found in latents, replacing with zeros")
                                 latents = torch.nan_to_num(latents, 0, out=latents)
@@ -1145,13 +1145,13 @@ class NetworkTrainer:
                         loss = apply_masked_loss(loss, batch)
                     loss = loss.mean([1, 2, 3])
 
-                    loss_weights = batch["loss_weights"]  # 各sampleごとのweight
+                    loss_weights = batch["loss_weights"]  # weight for each sample
                     loss = loss * loss_weights
 
                     # min snr gamma, scale v pred loss like noise pred, v pred like loss, debiased estimation etc.
                     loss = self.post_process_loss(loss, args, timesteps, noise_scheduler)
 
-                    loss = loss.mean()  # 平均なのでbatch_sizeで割る必要なし
+                    loss = loss.mean()  # No need to divide by batch_size since it's an average
 
                     accelerator.backward(loss)
                     if accelerator.sync_gradients:
