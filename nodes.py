@@ -139,6 +139,7 @@ class InitFluxTraining:
             "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
             "fp8_base": ("BOOLEAN", {"default": True, "tooltip": "use fp8 for base model"}),
+            "training_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "the actual dtype training uses"}),
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
             },
@@ -149,7 +150,7 @@ class InitFluxTraining:
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, attention_mode, **kwargs,):
+    def init_training(self, flux_models, dataset, sample_prompts, output_name, optimizer_type, attention_mode, training_dtype, **kwargs,):
         mm.soft_empty_cache()
 
         parser = setup_parser()
@@ -213,6 +214,12 @@ class InitFluxTraining:
             "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
         }
         config_dict.update(attention_settings.get(attention_mode, {}))
+
+        training_dtype_settings = {
+            "fp16": {"full_fp16": True, "full_bf16": False},
+            "bf16": {"full_bf16": True, "full_fp16": False}
+        }
+        config_dict.update(training_dtype_settings.get(training_dtype, {}))
 
         if optimizer_type == "adafactor":
             config_dict["optimizer_args"] = [
@@ -466,6 +473,7 @@ class FluxKohyaInferenceSampler:
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
             "lora_name": (folder_paths.get_filename_list("loras"), {"tooltip": "The name of the LoRA."}),
+            "lora_method": (["apply", "merge"], {"tooltip": "whether to apply or merge the lora weights"}),
             "steps": ("INT", {"default": 20, "min": 1, "max": 256, "step": 1, "tooltip": "sampling steps"}),
             "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image width"}),
             "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image height"}),
@@ -482,7 +490,7 @@ class FluxKohyaInferenceSampler:
     FUNCTION = "sample"
     CATEGORY = "FluxTrainer"
 
-    def sample(self, flux_models, lora_name, steps, width, height, guidance_scale, seed, prompt, use_fp8):
+    def sample(self, flux_models, lora_name, steps, width, height, guidance_scale, seed, prompt, use_fp8, lora_method):
 
         from .library import flux_utils as flux_utils
         from .library import strategy_flux as strategy_flux
@@ -550,14 +558,14 @@ class FluxKohyaInferenceSampler:
         lora_model, weights_sd = lora_flux.create_network_from_weights(
             multiplier, lora_path, ae, [clip_l, t5xxl], model, None, True
         )
-        #if args.merge_lora_weights:
-            #lora_model.merge_to([clip_l, t5xxl], model, weights_sd)
-        #else:
-        lora_model.apply_to([clip_l, t5xxl], model)
-        info = lora_model.load_state_dict(weights_sd, strict=True)
-        logger.info(f"Loaded LoRA weights from {lora_name}: {info}")
-        lora_model.eval()
-        lora_model.to(device)
+        if lora_method == "merge":
+            lora_model.merge_to([clip_l, t5xxl], model, weights_sd)
+        elif lora_method == "apply":
+            lora_model.apply_to([clip_l, t5xxl], model)
+            info = lora_model.load_state_dict(weights_sd, strict=True)
+            logger.info(f"Loaded LoRA weights from {lora_name}: {info}")
+            lora_model.eval()
+            lora_model.to(device)
         lora_models.append(lora_model)
 
 
