@@ -212,8 +212,8 @@ class InitFluxTraining:
             "loss_type": "l2",
             "optimizer_type": optimizer_type,
             "guidance_scale": 3.5,
-            "width" : width,
-            "height" : height,
+            "width" : int(width),
+            "height" : int(height),
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
