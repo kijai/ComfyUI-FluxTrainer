@@ -115,9 +115,10 @@ class InitFluxTraining:
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
             "dataset": ("TOML_DATASET",),
-            "output_name": ("STRING", {"default": "train_flux", "multiline": False}),
+            "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
+            "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False}),
             "network_dim": ("INT", {"default": 4, "min": 1, "max": 256, "step": 1, "tooltip": "network dim"}),
-            "learning_rate": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "learning rate"}),
+            "learning_rate": ("FLOAT", {"default": 4e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "learning rate"}),
             "unet_lr": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "unet learning rate"}),
             #"max_train_epochs": ("INT", {"default": 4, "min": 1, "max": 1000, "step": 1, "tooltip": "max number of training epochs"}),
             "optimizer_type": (["adamw8bit", "adafactor", "prodigy"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
@@ -181,13 +182,14 @@ class InitFluxTraining:
             kwargs["cache_text_encoder_outputs"] = False
             kwargs["cache_text_encoder_outputs_to_disk"] = False
 
-        #dataset_config = os.path.join(script_directory, "dataset_flux.toml")
+        
         output_dir = os.path.join(script_directory, "output")
         if '|' in sample_prompts:
             prompts = sample_prompts.split('|')
         else:
             prompts = [sample_prompts]
 
+        width, height = dataset["datasets"][0]["resolution"]
         config_dict = {
             "sample_prompts": prompts,
             "save_precision": save_dtype,
@@ -206,10 +208,12 @@ class InitFluxTraining:
             "network_module": "networks.lora_flux",
             "dataset_config": dataset,
             "output_dir": output_dir,
-            "output_name": output_name,
+            "output_name": f"{output_name}_rank{kwargs.get["network_dim"]}_{save_dtype}",
             "loss_type": "l2",
             "optimizer_type": optimizer_type,
             "guidance_scale": 3.5,
+            "width" : width,
+            "height" : height,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
