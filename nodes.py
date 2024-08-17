@@ -5,7 +5,7 @@ from torchvision import transforms
 import folder_paths
 import comfy.model_management as mm
 import comfy.utils
-
+import toml
 import time
 
 script_directory = os.path.dirname(os.path.abspath(__file__))
@@ -79,7 +79,7 @@ class TrainDatasetConfig:
 
     def create_config(self, dataset_path, class_tokens, width, height, batch_size, enable_bucket, color_aug, flip_aug, 
                   bucket_no_upscale, min_bucket_reso, max_bucket_resos):
-        import toml
+        
 
         dataset = {
            "general": {
@@ -189,7 +189,7 @@ class InitFluxTraining:
         else:
             prompts = [sample_prompts]
 
-        width, height = dataset["datasets"][0]["resolution"]
+        width, height = toml.loads(dataset)["datasets"][0]["resolution"]
         config_dict = {
             "sample_prompts": prompts,
             "save_precision": save_dtype,
