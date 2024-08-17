@@ -198,6 +198,7 @@ def sample_image_inference(
 
     # sample image
     weight_dtype = ae.dtype  # TOFO give dtype as argument
+    print("WEIGHT DTYPE: ", weight_dtype)
     packed_latent_height = height // 16
     packed_latent_width = width // 16
     noise = torch.randn(
@@ -209,6 +210,7 @@ def sample_image_inference(
         generator=torch.Generator(device=accelerator.device).manual_seed(seed) if seed is not None else None,
     )
     timesteps = get_schedule(sample_steps, noise.shape[1], shift=True)  # FLUX.1 dev -> shift=True
+    print("TIMESTEPS: ", timesteps)
     img_ids = flux_utils.prepare_img_ids(1, packed_latent_height, packed_latent_width).to(accelerator.device, weight_dtype)
 
     with accelerator.autocast(), torch.no_grad():
@@ -294,7 +296,10 @@ def denoise(
     guidance: float = 4.0,
 ):
     # this is ignored for schnell
+    print("TRANSFORMER DTYPE: ", model.dtype)
+    print("IMAGE DTYPE: ", img.dtype)
     guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
+    print("GUIDANCE VECTOR: ", guidance_vec)
     for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
         pred = model(img=img, img_ids=img_ids, txt=txt, txt_ids=txt_ids, y=vec, timesteps=t_vec, guidance=guidance_vec)

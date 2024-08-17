@@ -460,7 +460,260 @@ class VisualizeLoss:
 
         return image_tensor,
 
-    
+class FluxKohyaInferenceSampler:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "flux_models": ("TRAIN_FLUX_MODELS",),
+            "lora_name": (folder_paths.get_filename_list("loras"), {"tooltip": "The name of the LoRA."}),
+            "steps": ("INT", {"default": 20, "min": 1, "max": 256, "step": 1, "tooltip": "sampling steps"}),
+            "width": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image width"}),
+            "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image height"}),
+            "guidance_scale": ("FLOAT", {"default": 3.5, "min": 1.0, "max": 32.0, "step": 0.05, "tooltip": "guidance scale"}),
+            "seed": ("INT", {"default": 42,"min": 0, "max": 0xffffffffffffffff, "step": 1}),
+            "use_fp8": ("BOOLEAN", {"default": True, "tooltip": "use fp8 weights"}),
+            "prompt": ("STRING", {"multiline": True, "default": "illustration of a kitten", "tooltip": "prompt"}),
+          
+            },
+        }
+
+    RETURN_TYPES = ("IMAGE", )
+    RETURN_NAMES = ("image", )
+    FUNCTION = "sample"
+    CATEGORY = "FluxTrainer"
+
+    def sample(self, flux_models, lora_name, steps, width, height, guidance_scale, seed, prompt, use_fp8):
+
+        from .library import flux_utils as flux_utils
+        from .library import strategy_flux as strategy_flux
+        from .networks import lora_flux as lora_flux
+        from typing import List, Optional, Callable
+        from tqdm import tqdm
+        import einops
+        import math
+        import accelerate
+        import gc
+
+        device = "cuda"
+        apply_t5_attn_mask = True
+
+        if use_fp8:
+            accelerator = accelerate.Accelerator(mixed_precision="bf16")
+            dtype = torch.float8_e4m3fn
+        else:
+            dtype = torch.float16
+            accelerator = None
+        loading_device = "cpu"
+        ae_dtype = torch.bfloat16
+
+        pretrained_model_name_or_path = flux_models["transformer"]
+        clip_l = flux_models["clip_l"]
+        t5xxl = flux_models["t5"]
+        ae = flux_models["vae"]
+        lora_path = folder_paths.get_full_path("loras", lora_name)
+
+        # load clip_l
+        logger.info(f"Loading clip_l from {clip_l}...")
+        clip_l = flux_utils.load_clip_l(clip_l, None, loading_device)
+        clip_l.eval()
+
+        logger.info(f"Loading t5xxl from {t5xxl}...")
+        t5xxl = flux_utils.load_t5xxl(t5xxl, None, loading_device)
+        t5xxl.eval()
+
+        if use_fp8:
+            clip_l = accelerator.prepare(clip_l)
+            t5xxl = accelerator.prepare(t5xxl)
+
+        t5xxl_max_length = 512
+        tokenize_strategy = strategy_flux.FluxTokenizeStrategy(t5xxl_max_length)
+        encoding_strategy = strategy_flux.FluxTextEncodingStrategy()
+
+        # DiT
+        model = flux_utils.load_flow_model("dev", pretrained_model_name_or_path, dtype, loading_device)
+        model.eval()
+        logger.info(f"Casting model to {dtype}")
+        model.to(dtype)  # make sure model is dtype
+        if use_fp8:
+            model = accelerator.prepare(model)
+
+        # AE
+        ae = flux_utils.load_ae("dev", ae, ae_dtype, loading_device)
+        ae.eval()
+        #if is_fp8(ae_dtype):
+        #    ae = accelerator.prepare(ae)
+
+        # LoRA
+        lora_models: List[lora_flux.LoRANetwork] = []
+        multiplier = 1.0
+
+        lora_model, weights_sd = lora_flux.create_network_from_weights(
+            multiplier, lora_path, ae, [clip_l, t5xxl], model, None, True
+        )
+        #if args.merge_lora_weights:
+            #lora_model.merge_to([clip_l, t5xxl], model, weights_sd)
+        #else:
+        lora_model.apply_to([clip_l, t5xxl], model)
+        info = lora_model.load_state_dict(weights_sd, strict=True)
+        logger.info(f"Loaded LoRA weights from {lora_name}: {info}")
+        lora_model.eval()
+        lora_model.to(device)
+        lora_models.append(lora_model)
+
+
+        packed_latent_height, packed_latent_width = math.ceil(height / 16), math.ceil(width / 16)
+        noise = torch.randn(
+            1,
+            packed_latent_height * packed_latent_width,
+            16 * 2 * 2,
+            device=device,
+            dtype=ae_dtype,
+            generator=torch.Generator(device=device).manual_seed(seed),
+        )
+
+        img_ids = flux_utils.prepare_img_ids(1, packed_latent_height, packed_latent_width)
+
+        # prepare embeddings
+        logger.info("Encoding prompts...")
+        tokens_and_masks = tokenize_strategy.tokenize(prompt)
+        clip_l = clip_l.to(device)
+        t5xxl = t5xxl.to(device)
+        with torch.no_grad():
+            if use_fp8:
+                clip_l.to(ae_dtype)
+                t5xxl.to(ae_dtype)
+                with accelerator.autocast():
+                    l_pooled, t5_out, txt_ids = encoding_strategy.encode_tokens(
+                        tokenize_strategy, [clip_l, t5xxl], tokens_and_masks, apply_t5_attn_mask
+                    )
+            else:
+                with torch.autocast(device_type=device.type, dtype=dtype):
+                    l_pooled, _, _ = encoding_strategy.encode_tokens(tokenize_strategy, [clip_l, None], tokens_and_masks)
+                with torch.autocast(device_type=device.type, dtype=dtype):
+                    _, t5_out, txt_ids = encoding_strategy.encode_tokens(
+                        tokenize_strategy, [None, t5xxl], tokens_and_masks, apply_t5_attn_mask
+                    )
+        # NaN check
+        if torch.isnan(l_pooled).any():
+            raise ValueError("NaN in l_pooled")
+                
+        if torch.isnan(t5_out).any():
+            raise ValueError("NaN in t5_out")
+
+        
+        clip_l = clip_l.cpu()
+        t5xxl = t5xxl.cpu()
+      
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # generate image
+        logger.info("Generating image...")
+        model = model.to(device)
+        print("MODEL DTYPE: ", model.dtype)
+
+        img_ids = img_ids.to(device)
+        def time_shift(mu: float, sigma: float, t: torch.Tensor):
+            return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
+
+
+        def get_lin_function(x1: float = 256, y1: float = 0.5, x2: float = 4096, y2: float = 1.15) -> Callable[[float], float]:
+            m = (y2 - y1) / (x2 - x1)
+            b = y1 - m * x1
+            return lambda x: m * x + b
+
+
+        def get_schedule(
+            num_steps: int,
+            image_seq_len: int,
+            base_shift: float = 0.5,
+            max_shift: float = 1.15,
+            shift: bool = True,
+        ) -> list[float]:
+            # extra step for zero
+            timesteps = torch.linspace(1, 0, num_steps + 1)
+
+            # shifting the schedule to favor high timesteps for higher signal images
+            if shift:
+                # eastimate mu based on linear estimation between two points
+                mu = get_lin_function(y1=base_shift, y2=max_shift)(image_seq_len)
+                timesteps = time_shift(mu, 1.0, timesteps)
+
+            return timesteps.tolist()
+
+
+        def denoise(
+            model,
+            img: torch.Tensor,
+            img_ids: torch.Tensor,
+            txt: torch.Tensor,
+            txt_ids: torch.Tensor,
+            vec: torch.Tensor,
+            timesteps: list[float],
+            guidance: float = 4.0,
+        ):
+            # this is ignored for schnell
+            guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
+            for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
+                t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
+                pred = model(img=img, img_ids=img_ids, txt=txt, txt_ids=txt_ids, y=vec, timesteps=t_vec, guidance=guidance_vec)
+
+                img = img + (t_prev - t_curr) * pred
+
+            return img
+        def do_sample(
+            accelerator: Optional[accelerate.Accelerator],
+            model,
+            img: torch.Tensor,
+            img_ids: torch.Tensor,
+            l_pooled: torch.Tensor,
+            t5_out: torch.Tensor,
+            txt_ids: torch.Tensor,
+            num_steps: int,
+            guidance: float,
+            is_schnell: bool,
+            device: torch.device,
+            flux_dtype: torch.dtype,
+        ):
+            timesteps = get_schedule(num_steps, img.shape[1], shift=not is_schnell)
+
+            # denoise initial noise
+            if accelerator:
+                with accelerator.autocast(), torch.no_grad():
+                    x = denoise(model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance)
+            else:
+                with torch.autocast(device_type=device.type, dtype=flux_dtype), torch.no_grad():
+                    x = denoise(model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance)
+
+            return x
+        
+        x = do_sample(accelerator, model, noise, img_ids, l_pooled, t5_out, txt_ids, steps, guidance_scale, True, device, dtype)
+        
+        model = model.cpu()
+        gc.collect()
+        torch.cuda.empty_cache()
+
+        # unpack
+        x = x.float()
+        x = einops.rearrange(x, "b (h w) (c ph pw) -> b c (h ph) (w pw)", h=packed_latent_height, w=packed_latent_width, ph=2, pw=2)
+
+        # decode
+        logger.info("Decoding image...")
+        ae = ae.to(device)
+        with torch.no_grad():
+            if use_fp8:
+                with accelerator.autocast():
+                    x = ae.decode(x)
+            else:
+                with torch.autocast(device_type=device.type, dtype=ae_dtype):
+                    x = ae.decode(x)
+
+        ae = ae.cpu()
+
+        x = x.clamp(-1, 1)
+        x = x.permute(0, 2, 3, 1)
+
+        return ((0.5 * (x + 1.0)).cpu().float(),)   
 
 NODE_CLASS_MAPPINGS = {
     "InitFluxTraining": InitFluxTraining,
@@ -471,7 +724,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainValidate": FluxTrainValidate,
     "FluxTrainValidationSettings": FluxTrainValidationSettings,
     "FluxTrainEnd": FluxTrainEnd,
-    "FluxTrainSave": FluxTrainSave
+    "FluxTrainSave": FluxTrainSave,
+    "FluxKohyaInferenceSampler": FluxKohyaInferenceSampler
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxTraining": "Init Flux Training",
@@ -482,5 +736,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainValidate": "Flux Train Validate",
     "FluxTrainValidationSettings": "Flux Train Validation Settings",
     "FluxTrainEnd": "Flux Train End",
-    "FluxTrainSave": "Flux Train Save"
+    "FluxTrainSave": "Flux Train Save",
+    "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler"
 }
