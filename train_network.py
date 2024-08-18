@@ -1044,12 +1044,12 @@ class NetworkTrainer:
         self.save_model = save_model
         self.remove_model = remove_model
 
-        progress_bar = tqdm(
-            range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps"
-            )
+        progress_bar = tqdm(range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps")
         def training_loop(break_at_steps, epoch):
             steps_done = 0
-            accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
+            #accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
+            progress_bar.set_description(f"Epoch {epoch + 1}/{num_train_epochs} - steps")
+
             current_epoch.value = epoch + 1
 
             metadata["ss_epoch"] = str(epoch + 1)
