@@ -12,12 +12,14 @@ from pathlib import Path
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
 from .flux_train_network_comfy import FluxNetworkTrainer
-
+from .library import flux_train_utils as  flux_train_utils
+from .flux_train_comfy import FluxTrainer
+from .flux_train_comfy import setup_parser as train_setup_parser
 from .library.device_utils import init_ipex
 init_ipex()
 
 from .library import train_util
-from .train_network import setup_parser
+from .train_network import setup_parser as train_network_setup_parser
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -59,15 +61,15 @@ class TrainDatasetConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "width": ("INT",{"min": 64, "default": 512}),
-            "height": ("INT",{"min": 64, "default": 512}),
+            "width": ("INT",{"min": 64, "default": 1024, "tooltip": "image width when bucketing is not used, also the default validation sampling width"}),
+            "height": ("INT",{"min": 64, "default": 1024, "tooltip": "image height when bucketing is not used, also the default validation sampling height"}),
             "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more. "}),
-            "dataset_path": ("STRING",{"multiline": True, "default": ""}),
+            "dataset_path": ("STRING",{"multiline": True, "default": "", "tooltip": "path to dataset, root is ComfyUI folder"}),
             "class_tokens": ("STRING",{"multiline": True, "default": ""}),
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
             "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "bucket reso is defined by image size automatically"}),
             "min_bucket_reso": ("INT",{"min": 64, "default": 256}),
-            "max_bucket_resos": ("STRING",{"default": "1024, 768, 512"}),
+            "max_bucket_resos": ("STRING",{"default": "1024, 768, 512", "tooltip": "comma separated list of bucket resos, when multiple are given the nearest to the original is used"}),
             "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
             "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
             "dataset_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
@@ -113,20 +115,43 @@ class TrainDatasetConfig:
             "dataset": toml.dumps(dataset)
         }
         return (dataset_settings,)
+
+class OptimizerConfig:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "optimizer_type": (["adamw8bit", "adafactor", "prodigy"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
+            "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
+            "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup", "adafactor"], {"default": "constant", "tooltip": "learning rate scheduler"}),
+            "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
+            "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
+            "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
+           },
+        }
+
+    RETURN_TYPES = ("ARGS",)
+    RETURN_NAMES = ("optimizer_settings",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, **kwargs):
+        
+        return (kwargs,)
     
-class InitFluxTraining:
+
+class InitFluxLoRATraining:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
             "dataset_settings": ("TOML_DATASET",),
+            "optimizer_settings": ("ARGS",),
             "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False}),
             "network_dim": ("INT", {"default": 4, "min": 1, "max": 256, "step": 1, "tooltip": "network dim"}),
             "learning_rate": ("FLOAT", {"default": 4e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "learning rate"}),
             "unet_lr": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "unet learning rate"}),
             #"max_train_epochs": ("INT", {"default": 4, "min": 1, "max": 1000, "step": 1, "tooltip": "max number of training epochs"}),
-            "optimizer_type": (["adamw8bit", "adafactor", "prodigy"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
             "max_train_steps": ("INT", {"default": 1500, "min": 1, "max": 10000, "step": 1, "tooltip": "max number of training steps"}),
             "network_train_unet_only": ("BOOLEAN", {"default": True, "tooltip": "wheter to train the text encoder"}),
             "text_encoder_lr": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
@@ -135,13 +160,14 @@ class InitFluxTraining:
             "cache_latents": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "cache_text_encoder_outputs": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "split_mode": ("BOOLEAN", {"default": False, "tooltip": "[EXPERIMENTAL] use split mode for Flux model, network arg `train_blocks=single` is required"}),
-            "weighting_scheme": (["sigma_sqrt", "logit_normal", "mode", "cosmap", "none"],),
+            "weighting_scheme": (["logit_normal", "sigma_sqrt", "mode", "cosmap", "none"],),
             "logit_mean": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "mean to use when using the logit_normal weighting scheme"}),
             "logit_std": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "std to use when using the logit_normal weighting scheme"}),
             "mode_scale": ("FLOAT", {"default": 1.29, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "Scale of mode weighting scheme. Only effective when using the mode as the weighting_scheme"}),
             "timestep_sampling": (["sigmoid", "uniform", "sigma"], {"tooltip": "method to sample timestep"}),
             "sigmoid_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1, "tooltip": "Scale factor for sigmoid timestep sampling (only used when timestep-sampling is sigmoid"}),
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
+            "guidance_scale": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale, for Flux training should be 1.0"}),
             "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
             "fp8_base": ("BOOLEAN", {"default": True, "tooltip": "use fp8 for base model"}),
@@ -157,13 +183,13 @@ class InitFluxTraining:
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, dataset_settings, sample_prompts, output_name, optimizer_type, attention_mode, training_dtype, save_dtype, **kwargs,):
+    def init_training(self, flux_models, dataset_settings, optimizer_settings, sample_prompts, output_name, attention_mode, training_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
         dataset = dataset_settings["dataset"]
         dataset_repeats = dataset_settings["repeats"]
         
-        parser = setup_parser()
+        parser = train_network_setup_parser()
         args, _ = parser.parse_known_args()
 
         if kwargs.get("cache_latents") == "memory":
@@ -219,8 +245,6 @@ class InitFluxTraining:
             "output_dir": output_dir,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
-            "optimizer_type": optimizer_type,
-            "guidance_scale": 3.5,
             "width" : int(width),
             "height" : int(height),
         }
@@ -236,13 +260,14 @@ class InitFluxTraining:
         }
         config_dict.update(training_dtype_settings.get(training_dtype, {}))
 
-        if optimizer_type == "adafactor":
+        if optimizer_settings["optimizer_type"] == "adafactor":
             config_dict["optimizer_args"] = [
                 "relative_step=False",
                 "scale_parameter=False",
                 "warmup_init=False"
             ]
         config_dict.update(kwargs)
+        config_dict.update(optimizer_settings)
 
         for key, value in config_dict.items():
             setattr(args, key, value)
@@ -251,7 +276,7 @@ class InitFluxTraining:
             network_trainer = FluxNetworkTrainer()
             training_loop = network_trainer.init_train(args)
 
-        final_output_lora_path = os.path.join(output_dir, "output", output_name)
+        final_output_lora_path = os.path.join(output_dir, output_name)
 
         epochs_count = network_trainer.num_train_epochs
 
@@ -260,13 +285,161 @@ class InitFluxTraining:
             "training_loop": training_loop,
         }
         return (trainer, epochs_count, final_output_lora_path)
+
+class InitFluxTraining:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "flux_models": ("TRAIN_FLUX_MODELS",),
+            "dataset_settings": ("TOML_DATASET",),
+            "optimizer_settings": ("OPTIMIZER_SETTINGS",),
+            "output_name": ("STRING", {"default": "flux", "multiline": False}),
+            "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False, "tooltip": "output directory, root is ComfyUI folder"}),
+            "learning_rate": ("FLOAT", {"default": 5e-5, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "learning rate"}),
+            "max_train_steps": ("INT", {"default": 1500, "min": 1, "max": 10000, "step": 1, "tooltip": "max number of training steps"}),
+            "apply_t5_attn_mask": ("BOOLEAN", {"default": True, "tooltip": "apply t5 attention mask"}),
+            "t5xxl_max_token_length": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "dev uses 512, schnell 256"}),
+            "cache_latents": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
+            "cache_text_encoder_outputs": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
+            "weighting_scheme": (["logit_normal", "sigma_sqrt", "mode", "cosmap", "none"],),
+            "logit_mean": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "mean to use when using the logit_normal weighting scheme"}),
+            "logit_std": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "std to use when using the logit_normal weighting scheme"}),
+            "mode_scale": ("FLOAT", {"default": 1.29, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "Scale of mode weighting scheme. Only effective when using the mode as the weighting_scheme"}),
+            "loss_type": (["l1", "l2", "huber", "smooth_l1"], {"default": "l2", "tooltip": "loss type"}),
+            "timestep_sampling": (["sigmoid", "uniform", "sigma"], {"tooltip": "method to sample timestep"}),
+            "sigmoid_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1, "tooltip": "Scale factor for sigmoid timestep sampling (only used when timestep-sampling is sigmoid"}),
+            "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
+            "cpu_offload_checkpointing": ("BOOLEAN", {"default": True, "tooltip": "offload the gradient checkpointing to CPU. This reduces VRAM usage for about 2GB"}),
+            "blockwise_fused_optimizer": ("BOOLEAN", {"default": True, "tooltip": "enables the fusing of the optimizer for each block"}),
+            "single_blocks_to_swap": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "number of single blocks to swap. The default is 0. This option must be combined with blockwise_fused_optimizer"}),
+            "double_blocks_to_swap": ("INT", {"default": 6, "min": 0, "max": 100, "step": 1, "tooltip": "number of double blocks to swap. This option must be combined with blockwise_fused_optimizer"}),
+            "guidance_scale": ("FLOAT", {"default": 3.5, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale"}),
+            "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
+            "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
+            "fp8_base": ("BOOLEAN", {"default": False, "tooltip": "use fp8 for base model"}),
+            "full_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "to use the full fp16/bf16 training"}),
+            "save_dtype": (["fp32", "fp16", "bf16", "fp8_e4m3fn"], {"default": "bf16", "tooltip": "the dtype to save checkpoints as"}),
+            "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
+            "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
+            },
+        }
+
+    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", )
+    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path",)
+    FUNCTION = "init_training"
+    CATEGORY = "FluxTrainer"
+
+    def init_training(self, flux_models, optimizer_settings, dataset_settings, sample_prompts, output_name, optimizer_type, 
+                      attention_mode, full_dtype, save_dtype, **kwargs,):
+        mm.soft_empty_cache()
+
+        dataset = dataset_settings["dataset"]
+        dataset_repeats = dataset_settings["repeats"]
+        
+        parser = train_setup_parser()
+        args, _ = parser.parse_known_args()
+
+        if kwargs.get("cache_latents") == "memory":
+            kwargs["cache_latents"] = True
+            kwargs["cache_latents_to_disk"] = False
+        elif kwargs.get("cache_latents") == "disk":
+            kwargs["cache_latents"] = True
+            kwargs["cache_latents_to_disk"] = True
+            kwargs["caption_dropout_rate"] = 0.0
+            kwargs["shuffle_caption"] = False
+            kwargs["token_warmup_step"] = 0.0
+            kwargs["caption_tag_dropout_rate"] = 0.0
+        else:
+            kwargs["cache_latents"] = False
+            kwargs["cache_latents_to_disk"] = False
+
+        if kwargs.get("cache_text_encoder_outputs") == "memory":
+            kwargs["cache_text_encoder_outputs"] = True
+            kwargs["cache_text_encoder_outputs_to_disk"] = False
+        elif kwargs.get("cache_text_encoder_outputs") == "disk":
+            kwargs["cache_text_encoder_outputs"] = True
+            kwargs["cache_text_encoder_outputs_to_disk"] = True
+        else:
+            kwargs["cache_text_encoder_outputs"] = False
+            kwargs["cache_text_encoder_outputs_to_disk"] = False
+
+        
+        output_dir = os.path.join(script_directory, "output")
+        if '|' in sample_prompts:
+            prompts = sample_prompts.split('|')
+        else:
+            prompts = [sample_prompts]
+
+        width, height = toml.loads(dataset)["datasets"][0]["resolution"]
+        config_dict = {
+            "sample_prompts": prompts,
+            "save_precision": save_dtype,
+            "dataset_repeats": dataset_repeats,
+            "mixed_precision": "bf16",
+            "num_cpu_threads_per_process": 1,
+            "pretrained_model_name_or_path": flux_models["transformer"],
+            "clip_l": flux_models["clip_l"],
+            "t5xxl": flux_models["t5"],
+            "ae": flux_models["vae"],
+            "save_model_as": "safetensors",
+            "persistent_data_loader_workers": False,
+            "max_data_loader_n_workers": 0,
+            "seed": 42,
+            "gradient_checkpointing": True,
+            "save_precision": "bf16",
+            "dataset_config": dataset,
+            "output_dir": output_dir,
+            "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
+            "optimizer_type": optimizer_type,
+            "width" : int(width),
+            "height" : int(height),
+
+        }
+        attention_settings = {
+            "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
+            "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
+        }
+        config_dict.update(attention_settings.get(attention_mode, {}))
+
+        full_dtype_settings = {
+            "fp16": {"full_fp16": True, "full_bf16": False},
+            "bf16": {"full_bf16": True, "full_fp16": False}
+        }
+        config_dict.update(full_dtype_settings.get(full_dtype, {}))
+
+        if optimizer_settings["optimizer_type"] == "adafactor":
+            config_dict["optimizer_args"] = [
+                "relative_step=False",
+                "scale_parameter=False",
+                "warmup_init=False"
+            ]
+            config_dict["max_grad_norm"] = 0
+        config_dict.update(kwargs)
+        config_dict.update(optimizer_settings)
+
+        for key, value in config_dict.items():
+            setattr(args, key, value)
+
+        with torch.inference_mode(False):
+            network_trainer = FluxTrainer()
+            training_loop = network_trainer.init_train(args)
+
+        final_output_path = os.path.join(output_dir, output_name)
+
+        epochs_count = network_trainer.num_train_epochs
+
+        trainer = {
+            "network_trainer": network_trainer,
+            "training_loop": training_loop,
+        }
+        return (trainer, epochs_count, final_output_path)
     
 class FluxTrainLoop:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
-            "steps": ("INT", {"default": 1, "min": 1, "max": 10000, "step": 1}),
+            "steps": ("INT", {"default": 1, "min": 1, "max": 10000, "step": 1, "tooltip": "the step point in training to validate/save"}),
              },
         }
 
@@ -309,29 +482,30 @@ class FluxTrainSave:
              },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER", "STRING",)
-    RETURN_NAMES = ("network_trainer","lora_path",)
+    RETURN_TYPES = ("NETWORKTRAINER", "STRING", "INT",)
+    RETURN_NAMES = ("network_trainer","lora_path", "steps",)
     FUNCTION = "endtrain"
     CATEGORY = "FluxTrainer"
 
     def endtrain(self, network_trainer, save_state):
         with torch.inference_mode(False):
             trainer = network_trainer["network_trainer"]
+            global_step = trainer.global_step
             
-            ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, trainer.global_step)
-            trainer.save_model(ckpt_name, trainer.accelerator.unwrap_model(trainer.network), trainer.global_step, trainer.current_epoch.value + 1)
+            ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, global_step)
+            trainer.save_model(ckpt_name, trainer.accelerator.unwrap_model(trainer.network), global_step, trainer.current_epoch.value + 1)
 
-            remove_step_no = train_util.get_remove_step_no(trainer.args, trainer.global_step)
+            remove_step_no = train_util.get_remove_step_no(trainer.args, global_step)
             if remove_step_no is not None:
                 remove_ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, remove_step_no)
                 trainer.remove_model(remove_ckpt_name)
 
             if save_state:
-                train_util.save_and_remove_state_stepwise(trainer.args, trainer.accelerator, trainer.global_step)
+                train_util.save_and_remove_state_stepwise(trainer.args, trainer.accelerator, global_step)
 
-            lora_path = os.path.join(trainer.args.output_dir, "output", ckpt_name)
+            lora_path = os.path.join(trainer.args.output_dir, ckpt_name)
             
-        return (network_trainer, lora_path)
+        return (network_trainer, lora_path, global_step)
     
 class FluxTrainEnd:
     @classmethod
@@ -366,7 +540,7 @@ class FluxTrainEnd:
             network_trainer.save_model(ckpt_name, network, network_trainer.global_step, network_trainer.num_train_epochs, force_sync_upload=True)
             logger.info("model saved.")
 
-            final_output_lora_path = os.path.join(network_trainer.args.output_dir, "output", network_trainer.args.output_name)
+            final_output_lora_path = os.path.join(network_trainer.args.output_dir, network_trainer.args.output_name)
 
             # metadata
             metadata = json.dumps(network_trainer.metadata, indent=2)
@@ -421,16 +595,22 @@ class FluxTrainValidate:
         training_loop = network_trainer["training_loop"]
         network_trainer = network_trainer["network_trainer"]
 
-        image_tensors = network_trainer.sample_images(
+        params = (
             network_trainer.accelerator, 
             network_trainer.args, 
             network_trainer.current_epoch.value, 
             network_trainer.global_step,
+            network_trainer.unet,
             network_trainer.vae,
             network_trainer.text_encoder,
-            network_trainer.unet,
+            network_trainer.sample_prompts_te_outputs,
             validation_settings
-            )
+        )
+
+        if not network_trainer.args.split_mode:
+            image_tensors = flux_train_utils.sample_images(*params)
+        else:
+            image_tensors = network_trainer.sample_images_split_mode(*params)
 
         trainer = {
             "network_trainer": network_trainer,
@@ -749,8 +929,7 @@ class UploadToHuggingFace:
                 "network_trainer": ("NETWORKTRAINER",),
                 "source_path": ("STRING", {"default": ""}),
                 "repo_id": ("STRING",{"default": ""}),
-                "path_in_repo": ("STRING",{"default": "model"}),
-                "revision": ("STRING", {"default": "main"}),
+                "revision": ("STRING", {"default": ""}),
                 "private": ("BOOLEAN", {"default": True, "tooltip": "If creating a new repo, leave it private"}),
              },
              "optional": {
@@ -758,76 +937,89 @@ class UploadToHuggingFace:
              }
         }
 
-    RETURN_TYPES = ("STRING",)
-    RETURN_NAMES = ("status",)
+    RETURN_TYPES = ("NETWORKTRAINER", "STRING",)
+    RETURN_NAMES = ("network_trainer","status",)
     FUNCTION = "upload"
     CATEGORY = "FluxTrainer"
 
-    def upload(self, source_path, network_trainer, repo_id, path_in_repo, private, revision,token):
-        from huggingface_hub import HfApi
-        
-        with open(os.path.join(script_directory, "hf_token.json"), "r") as file:
-            token_data = json.load(file)
-        token = token_data["hf_token"]
-
-        # Save metadata to a JSON file
-        metadata = network_trainer["network_trainer"].metadata
-        metadata_file_path = Path(source_path) / "metadata.json"
-        with open(metadata_file_path, 'w') as f:
-            json.dump(metadata, f)
-
-        repo_type = "model"
-        api = HfApi(token=token)
-
-        try:
-            api.repo_info(repo_id=repo_id, revision=revision, repo_type=repo_type)
-            repo_exists = True
-        except:
-            repo_exists = False
-        
-        if not repo_exists(repo_id=repo_id, repo_type=repo_type, token=token):
-            try:
-                api.create_repo(repo_id=repo_id, repo_type=repo_type, private=private)
-            except Exception as e:  # Checked for RepositoryNotFoundError, but other exceptions could be problematic
-                logger.error("===========================================")
-                logger.error(f"failed to create HuggingFace repo: {e}")
-                logger.error("===========================================")
-
-        is_folder = (type(source_path) == str and os.path.isdir(source_path)) or (isinstance(source_path, Path) and source_path.is_dir())
-
-        try:
-            if is_folder:
-                api.upload_folder(
-                    repo_id=repo_id,
-                    repo_type=repo_type,
-                    folder_path=source_path,
-                    path_in_repo=path_in_repo,
-                )
-            else:
-                api.upload_file(
-                    repo_id=repo_id,
-                    repo_type=repo_type,
-                    path_or_fileobj=source_path,
-                    path_in_repo=path_in_repo,
-                )
-            # Upload the metadata file separately if it's not a folder upload
-            if not is_folder:
-                api.upload_file(
-                    repo_id=repo_id,
-                    repo_type=repo_type,
-                    path_or_fileobj=str(metadata_file_path),
-                    path_in_repo=path_in_repo + '/metadata.json',
-                )
-            status = "Uploaded to HuggingFace succesfully"
-        except Exception as e:  # RuntimeErrorを確認済みだが他にあると困るので
-            logger.error("===========================================")
-            logger.error(f"failed to upload to HuggingFace / HuggingFaceへのアップロードに失敗しました : {e}")
-            logger.error("===========================================")
-            status = f"Failed to upload to HuggingFace {e}"
+    def upload(self, source_path, network_trainer, repo_id, private, revision, token=""):
+        with torch.inference_mode(False):
+            from huggingface_hub import HfApi
             
-        return (status,)
+            if not token:
+                with open(os.path.join(script_directory, "hf_token.json"), "r") as file:
+                    token_data = json.load(file)
+                token = token_data["hf_token"]
+            print(token)
+
+            # Save metadata to a JSON file
+            directory_path = os.path.dirname(os.path.dirname(source_path))
+            file_name = os.path.basename(source_path)
+
+            metadata = network_trainer["network_trainer"].metadata
+            metadata_file_path = os.path.join(directory_path, "metadata.json")
+            with open(metadata_file_path, 'w') as f:
+                json.dump(metadata, f, indent=4)
+
+            repo_type = None
+            api = HfApi(token=token)
+
+            try:
+                api.repo_info(
+                    repo_id=repo_id, 
+                    revision=revision if revision != "" else None, 
+                    repo_type=repo_type)
+                repo_exists = True
+                logger.info(f"Repository {repo_id} exists.")
+            except Exception as e:  # Catching a more specific exception would be better if you know what to expect
+                repo_exists = False
+                logger.error(f"Repository {repo_id} does not exist. Exception: {e}")
+            
+            if not repo_exists:
+                try:
+                    api.create_repo(repo_id=repo_id, repo_type=repo_type, private=private)
+                except Exception as e:  # Checked for RepositoryNotFoundError, but other exceptions could be problematic
+                    logger.error("===========================================")
+                    logger.error(f"failed to create HuggingFace repo: {e}")
+                    logger.error("===========================================")
+
+            is_folder = (type(source_path) == str and os.path.isdir(source_path)) or (isinstance(source_path, Path) and source_path.is_dir())
+            print(source_path, is_folder)
+
+            try:
+                if is_folder:
+                    api.upload_folder(
+                        repo_id=repo_id,
+                        repo_type=repo_type,
+                        folder_path=source_path,
+                        path_in_repo=file_name,
+                    )
+                else:
+                    api.upload_file(
+                        repo_id=repo_id,
+                        repo_type=repo_type,
+                        path_or_fileobj=source_path,
+                        path_in_repo=file_name,
+                    )
+                # Upload the metadata file separately if it's not a folder upload
+                if not is_folder:
+                    api.upload_file(
+                        repo_id=repo_id,
+                        repo_type=repo_type,
+                        path_or_fileobj=str(metadata_file_path),
+                        path_in_repo='metadata.json',
+                    )
+                status = "Uploaded to HuggingFace succesfully"
+            except Exception as e:  # RuntimeErrorを確認済みだが他にあると困るので
+                logger.error("===========================================")
+                logger.error(f"failed to upload to HuggingFace / HuggingFaceへのアップロードに失敗しました : {e}")
+                logger.error("===========================================")
+                status = f"Failed to upload to HuggingFace {e}"
+                
+            return (network_trainer, status,)
 
 NODE_CLASS_MAPPINGS = {
+    "InitFluxLoRATraining": InitFluxLoRATraining,
     "InitFluxTraining": InitFluxTraining,
     "FluxTrainModelSelect": FluxTrainModelSelect,
     "TrainDatasetConfig": TrainDatasetConfig,
@@ -838,9 +1030,11 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainEnd": FluxTrainEnd,
     "FluxTrainSave": FluxTrainSave,
     "FluxKohyaInferenceSampler": FluxKohyaInferenceSampler,
-    "UploadToHuggingFace": UploadToHuggingFace
+    "UploadToHuggingFace": UploadToHuggingFace,
+    "OptimizerConfig": OptimizerConfig
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "InitFluxLoRATraining": "Init Flux LoRA Training",
     "InitFluxTraining": "Init Flux Training",
     "FluxTrainModelSelect": "FluxTrain ModelSelect",
     "TrainDatasetConfig": "Train Dataset Config",
@@ -851,5 +1045,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainEnd": "Flux Train End",
     "FluxTrainSave": "Flux Train Save",
     "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler",
-    "UploadToHuggingFace": "Upload To HuggingFace"
+    "UploadToHuggingFace": "Upload To HuggingFace",
+    "OptimizerConfig": "Optimizer Config"
 }

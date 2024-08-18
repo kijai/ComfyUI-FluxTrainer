@@ -168,7 +168,7 @@ class FluxNetworkTrainer(NetworkTrainer):
                 for i in range(len(prompts)):
                     prompt_dict = prompts[i]
                     if isinstance(prompt_dict, str):
-                        from library.train_util import line_to_prompt_dict
+                        from .library.train_util import line_to_prompt_dict
 
                         prompt_dict = line_to_prompt_dict(prompt_dict)
                         prompts[i] = prompt_dict
@@ -205,13 +205,8 @@ class FluxNetworkTrainer(NetworkTrainer):
             text_encoders[0].to(accelerator.device, dtype=weight_dtype)
             text_encoders[1].to(accelerator.device, dtype=weight_dtype)
 
-    def sample_images(self, accelerator, args, epoch, global_step, ae, text_encoder, flux, validation_settings):
-        if not args.split_mode:
-            image_tensors = flux_train_utils.sample_images(
-                accelerator, args, epoch, global_step, flux, ae, text_encoder, self.sample_prompts_te_outputs, validation_settings
-            )
-            return image_tensors
-
+    def sample_images_split_mode(self, accelerator, args, epoch, global_step, flux, ae, text_encoder, sample_prompts_te_outputs, validation_settings):
+       
         class FluxUpperLowerWrapper(torch.nn.Module):
             def __init__(self, flux_upper: flux_models.FluxUpper, flux_lower: flux_models.FluxLower, device: torch.device):
                 super().__init__()
@@ -232,7 +227,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         wrapper = FluxUpperLowerWrapper(self.flux_upper, flux, accelerator.device)
         clean_memory_on_device(accelerator.device)
         flux_train_utils.sample_images(
-            accelerator, args, epoch, global_step, flux, ae, text_encoder, self.sample_prompts_te_outputs, validation_settings
+            accelerator, args, epoch, global_step, wrapper, ae, text_encoder, sample_prompts_te_outputs, validation_settings
         )
         clean_memory_on_device(accelerator.device)
 
@@ -316,32 +311,10 @@ class FluxNetworkTrainer(NetworkTrainer):
         noise = torch.randn_like(latents)
         bsz = latents.shape[0]
 
-        if args.timestep_sampling == "uniform" or args.timestep_sampling == "sigmoid":
-            # Simple random t-based noise sampling
-            if args.timestep_sampling == "sigmoid":
-                # https://github.com/XLabs-AI/x-flux/tree/main
-                t = torch.sigmoid(args.sigmoid_scale * torch.randn((bsz,), device=accelerator.device))
-            else:
-                t = torch.rand((bsz,), device=accelerator.device)
-            timesteps = t * 1000.0
-            t = t.view(-1, 1, 1, 1)
-            noisy_model_input = (1 - t) * latents + t * noise
-        else:
-            # Sample a random timestep for each image
-            # for weighting schemes where we sample timesteps non-uniformly
-            u = compute_density_for_timestep_sampling(
-                weighting_scheme=args.weighting_scheme,
-                batch_size=bsz,
-                logit_mean=args.logit_mean,
-                logit_std=args.logit_std,
-                mode_scale=args.mode_scale,
-            )
-            indices = (u * self.noise_scheduler_copy.config.num_train_timesteps).long()
-            timesteps = self.noise_scheduler_copy.timesteps[indices].to(device=accelerator.device)
-
-            # Add noise according to flow matching.
-            sigmas = get_sigmas(timesteps, n_dim=latents.ndim, dtype=weight_dtype)
-            noisy_model_input = sigmas * noise + (1.0 - sigmas) * latents
+        # get noisy model input and timesteps
+        noisy_model_input, timesteps, sigmas = flux_train_utils.get_noisy_model_input_and_timesteps(
+            args, noise_scheduler, latents, noise, accelerator.device, weight_dtype
+        )
 
         # pack latents and get img_ids
         packed_noisy_model_input = flux_utils.pack_latents(noisy_model_input)  # b, c, h*2, w*2 -> b, h*w, c*4
@@ -414,20 +387,8 @@ class FluxNetworkTrainer(NetworkTrainer):
         # unpack latents
         model_pred = flux_utils.unpack_latents(model_pred, packed_latent_height, packed_latent_width)
 
-        if args.model_prediction_type == "raw":
-            # use model_pred as is
-            weighting = None
-        elif args.model_prediction_type == "additive":
-            # add the model_pred to the noisy_model_input
-            model_pred = model_pred + noisy_model_input
-            weighting = None
-        elif args.model_prediction_type == "sigma_scaled":
-            # apply sigma scaling
-            model_pred = model_pred * (-sigmas) + noisy_model_input
-
-            # these weighting schemes use a uniform timestep sampling
-            # and instead post-weight the loss
-            weighting = compute_loss_weighting_for_sd3(weighting_scheme=args.weighting_scheme, sigmas=sigmas)
+        # apply model prediction type
+        model_pred, weighting = flux_train_utils.apply_model_prediction_type(args, model_pred, noisy_model_input, sigmas)
 
         # flow matching loss: this is different from SD3
         target = noise - latents
