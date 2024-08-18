@@ -94,8 +94,8 @@ DEFAULT_EPOCH_NAME = "epoch"
 DEFAULT_LAST_OUTPUT_NAME = "last"
 
 DEFAULT_STEP_NAME = "at"
-STEP_STATE_NAME = "{}-step{:08d}-state"
-STEP_FILE_NAME = "{}-step{:08d}"
+STEP_STATE_NAME = "{}-step{:05d}-state"
+STEP_FILE_NAME = "{}-step{:05d}"
 STEP_DIFFUSERS_DIR_NAME = "{}-step{:08d}"
 
 # region dataset
@@ -5820,16 +5820,19 @@ class collator_class:
 class LossRecorder:
     def __init__(self):
         self.loss_list: List[float] = []
+        self.global_loss_list: List[float] = []
         self.loss_total: float = 0.0
 
-    def add(self, *, epoch: int, step: int, loss: float) -> None:
+    def add(self, *, epoch: int, step: int, global_step: int, loss: float) -> None:
         if epoch == 0:
             self.loss_list.append(loss)
+            self.global_loss_list.append(loss)
         else:
             while len(self.loss_list) <= step:
                 self.loss_list.append(0.0)
             self.loss_total -= self.loss_list[step]
             self.loss_list[step] = loss
+            self.global_loss_list.append(loss)
         self.loss_total += loss
 
     @property

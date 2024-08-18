@@ -966,7 +966,7 @@ class NetworkTrainer:
             init_kwargs=init_kwargs,
         )
 
-        loss_recorder = train_util.LossRecorder()
+        self.loss_recorder = train_util.LossRecorder()
         del train_dataset_group
 
         pbar.update(1)
@@ -1040,10 +1040,9 @@ class NetworkTrainer:
         self.metadata = metadata
         self.optimizer = optimizer
         self.lr_scheduler = lr_scheduler
-        self.loss_recorder = loss_recorder
         self.save_model = save_model
         self.remove_model = remove_model
-
+        
         progress_bar = tqdm(range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps")
         def training_loop(break_at_steps, epoch):
             steps_done = 0
@@ -1178,8 +1177,8 @@ class NetworkTrainer:
                     self.global_step += 1
 
                 current_loss = loss.detach().item()
-                loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
-                avr_loss: float = loss_recorder.moving_average
+                self.loss_recorder.add(epoch=epoch, step=step, global_step=self.global_step, loss=current_loss)
+                avr_loss: float = self.loss_recorder.moving_average
                 logs = {"avr_loss": avr_loss}  # , "lr": lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
 
@@ -1197,7 +1196,7 @@ class NetworkTrainer:
                 steps_done += 1
 
             if args.logging_dir is not None:
-                logs = {"loss/epoch": loss_recorder.moving_average}
+                logs = {"loss/epoch": self.loss_recorder.moving_average}
                 accelerator.log(logs, step=epoch + 1)
   
             return steps_done

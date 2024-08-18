@@ -577,7 +577,8 @@ class FluxTrainer:
         def training_loop(break_at_steps, epoch):
             global optimizer_hooked_count
             steps_done = 0
-            accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
+            #accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
+            progress_bar.set_description(f"Epoch {epoch + 1}/{num_train_epochs} - steps")
             current_epoch.value = epoch + 1
 
             for m in training_models:
