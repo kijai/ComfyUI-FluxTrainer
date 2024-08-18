@@ -20,6 +20,9 @@ init_ipex()
 
 from .library import train_util
 from .train_network import setup_parser as train_network_setup_parser
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -624,7 +627,7 @@ class VisualizeLoss:
     def INPUT_TYPES(s):
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
-            "plot_style": (['default', 'classic', 'dark_background', 'ggplot', 'seaborn', 'seaborn-dark', 'seaborn-darkgrid', 'fast', 'grayscale'],),
+            "plot_style": (plt.style.available,{"default": 'default', "tooltip": "matplotlib plot style"}),
              },
         }
 
@@ -634,11 +637,6 @@ class VisualizeLoss:
     CATEGORY = "FluxTrainer"
 
     def draw(self, network_trainer, plot_style):
-        import matplotlib.pyplot as plt
-        import io
-        from PIL import Image
-
-        # Example list of loss values
         loss_values = network_trainer["network_trainer"].loss_recorder.global_loss_list
 
         plt.style.use(plot_style)
@@ -652,16 +650,13 @@ class VisualizeLoss:
         ax.legend()
         ax.grid(True)
 
-        # Save the plot to a BytesIO object
         buf = io.BytesIO()
         plt.savefig(buf, format='png')
         plt.close(fig)
         buf.seek(0)
 
-        # Convert the BytesIO object to a PIL Image
         image = Image.open(buf).convert('RGB')
 
-        # Convert the PIL Image to a torch tensor
         image_tensor = transforms.ToTensor()(image)
         image_tensor = image_tensor.unsqueeze(0).permute(0, 2, 3, 1).cpu().float()
 
