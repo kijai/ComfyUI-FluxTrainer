@@ -114,7 +114,7 @@
         "Node name for S&R": "FluxTrainLoop"
       },
       "widgets_values": [
-        500
+        750
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -440,7 +440,7 @@
         4,
         0.0004,
         0.0001,
-        1500,
+        3000,
         true,
         0.0001,
         true,
@@ -535,7 +535,7 @@
         "Node name for S&R": "FluxTrainLoop"
       },
       "widgets_values": [
-        500
+        750
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -747,7 +747,7 @@
         "Node name for S&R": "FluxTrainLoop"
       },
       "widgets_values": [
-        500
+        750
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -959,7 +959,7 @@
         "Node name for S&R": "FluxTrainLoop"
       },
       "widgets_values": [
-        500
+        750
       ],
       "color": "#232",
       "bgcolor": "#353"
@@ -2347,10 +2347,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.6209213230591554,
+      "scale": 0.6209213230591557,
       "offset": [
-        -2130.0418407710777,
-        78.17081843628341
+        365.6901840006226,
+        107.00317247908333
       ]
     }
   },
