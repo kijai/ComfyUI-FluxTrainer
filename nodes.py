@@ -213,8 +213,8 @@ class InitFluxLoRATraining:
             },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", )
-    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path",)
+    RETURN_TYPES = ("NETWORKTRAINER", "INT", "KOHYA_ARGS",)
+    RETURN_NAMES = ("network_trainer", "epochs_count", "args",)
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
@@ -316,7 +316,7 @@ class InitFluxLoRATraining:
             "network_trainer": network_trainer,
             "training_loop": training_loop,
         }
-        return (trainer, epochs_count, final_output_lora_path)
+        return (trainer, epochs_count, args)
 
 class InitFluxTraining:
     @classmethod
