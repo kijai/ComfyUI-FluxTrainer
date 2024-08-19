@@ -314,14 +314,14 @@ class InitFluxTraining:
             "sigmoid_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1, "tooltip": "Scale factor for sigmoid timestep sampling (only used when timestep-sampling is sigmoid"}),
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
             "cpu_offload_checkpointing": ("BOOLEAN", {"default": True, "tooltip": "offload the gradient checkpointing to CPU. This reduces VRAM usage for about 2GB"}),
-            "blockwise_fused_optimizer": ("BOOLEAN", {"default": True, "tooltip": "enables the fusing of the optimizer for each block"}),
-            "single_blocks_to_swap": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "number of single blocks to swap. The default is 0. This option must be combined with blockwise_fused_optimizer"}),
-            "double_blocks_to_swap": ("INT", {"default": 6, "min": 0, "max": 100, "step": 1, "tooltip": "number of double blocks to swap. This option must be combined with blockwise_fused_optimizer"}),
-            "guidance_scale": ("FLOAT", {"default": 3.5, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale"}),
+            "blockwise_fused_optimizers": ("BOOLEAN", {"default": True, "tooltip": "enables the fusing of the optimizer for each block"}),
+            "single_blocks_to_swap": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "number of single blocks to swap. The default is 0. This option must be combined with blockwise_fused_optimizers"}),
+            "double_blocks_to_swap": ("INT", {"default": 6, "min": 0, "max": 100, "step": 1, "tooltip": "number of double blocks to swap. This option must be combined with blockwise_fused_optimizers"}),
+            "guidance_scale": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale"}),
             "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
             "fp8_base": ("BOOLEAN", {"default": False, "tooltip": "use fp8 for base model"}),
-            "full_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "to use the full fp16/bf16 training"}),
+            "gradient_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "to use the full fp16/bf16 training"}),
             "save_dtype": (["fp32", "fp16", "bf16", "fp8_e4m3fn"], {"default": "bf16", "tooltip": "the dtype to save checkpoints as"}),
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
@@ -334,7 +334,7 @@ class InitFluxTraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, optimizer_settings, dataset_settings, sample_prompts, output_name, optimizer_type, 
-                      attention_mode, full_dtype, save_dtype, **kwargs,):
+                      attention_mode, gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
         dataset = dataset_settings["dataset"]
@@ -405,11 +405,11 @@ class InitFluxTraining:
         }
         config_dict.update(attention_settings.get(attention_mode, {}))
 
-        full_dtype_settings = {
-            "fp16": {"full_fp16": True, "full_bf16": False},
-            "bf16": {"full_bf16": True, "full_fp16": False}
+        gradient_dtype_settings = {
+            "fp16": {"full_fp16": True, "full_bf16": False, "mixed_precision": "fp16"},
+            "bf16": {"full_bf16": True, "full_fp16": False, "mixed_precision": "bf16"}
         }
-        config_dict.update(full_dtype_settings.get(full_dtype, {}))
+        config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
 
         if optimizer_settings["optimizer_type"] == "adafactor":
             config_dict["optimizer_args"] = [
