@@ -123,12 +123,13 @@ class OptimizerConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "optimizer_type": (["adamw8bit", "adafactor", "prodigy"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
+            "optimizer_type": (["adamw8bit", "prodigy"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
             "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
-            "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup", "adafactor"], {"default": "constant", "tooltip": "learning rate scheduler"}),
+            "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup"], {"default": "constant", "tooltip": "learning rate scheduler"}),
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
             "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
             "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
+            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "tooltip": "min snr gamma"}),
            },
         }
 
@@ -137,10 +138,40 @@ class OptimizerConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, **kwargs):
-        
+    def create_config(self, min_snr_gamma, **kwargs):
+        kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         return (kwargs,)
-    
+
+class OptimizerConfigAdafactor:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
+            "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup", "adafactor"], {"default": "constant", "tooltip": "learning rate scheduler"}),
+            "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
+            "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
+            "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
+            "relative_step": ("BOOLEAN",{"default": False, "tooltip": "relative step"}),
+            "scale_parameter": ("BOOLEAN",{"default": False, "tooltip": "scale parameter"}),
+            "warmup_init": ("BOOLEAN",{"default": False, "tooltip": "warmup init"}),
+            "clip_threshold": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "clip threshold"}),
+           },
+        }
+
+    RETURN_TYPES = ("ARGS",)
+    RETURN_NAMES = ("optimizer_settings",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, relative_step, scale_parameter, warmup_init, clip_threshold, **kwargs):
+        kwargs["optimizer_type"] = "adafactor"
+        kwargs["optimizer_args"] = [
+                f"relative_step={relative_step}",
+                f"scale_parameter={scale_parameter}",
+                f"warmup_init={warmup_init}",
+                f"clip_threshold={clip_threshold}"
+            ]
+        return (kwargs,)    
 
 class InitFluxLoRATraining:
     @classmethod
@@ -152,14 +183,15 @@ class InitFluxLoRATraining:
             "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False}),
             "network_dim": ("INT", {"default": 4, "min": 1, "max": 256, "step": 1, "tooltip": "network dim"}),
+            "network_alpha": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 256.0, "step": 0.01, "tooltip": "network alpha"}),
             "learning_rate": ("FLOAT", {"default": 4e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "learning rate"}),
             "unet_lr": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "unet learning rate"}),
             #"max_train_epochs": ("INT", {"default": 4, "min": 1, "max": 1000, "step": 1, "tooltip": "max number of training epochs"}),
             "max_train_steps": ("INT", {"default": 1500, "min": 1, "max": 10000, "step": 1, "tooltip": "max number of training steps"}),
-            "network_train_unet_only": ("BOOLEAN", {"default": True, "tooltip": "wheter to train the text encoder"}),
-            "text_encoder_lr": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
+            #"network_train_unet_only": ("BOOLEAN", {"default": True, "tooltip": "wheter to train the text encoder"}),
+            #"text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
             "apply_t5_attn_mask": ("BOOLEAN", {"default": True, "tooltip": "apply t5 attention mask"}),
-            "t5xxl_max_token_length": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "dev uses 512, schnell 256"}),
+            #"t5xxl_max_token_length": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "dev uses 512, schnell 256"}),
             "cache_latents": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "cache_text_encoder_outputs": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "split_mode": ("BOOLEAN", {"default": False, "tooltip": "[EXPERIMENTAL] use split mode for Flux model, network arg `train_blocks=single` is required"}),
@@ -243,7 +275,6 @@ class InitFluxLoRATraining:
             "max_data_loader_n_workers": 0,
             "seed": 42,
             "gradient_checkpointing": True,
-            "save_precision": "bf16",
             "network_module": "networks.lora_flux",
             "dataset_config": dataset,
             "output_dir": output_dir,
@@ -251,6 +282,9 @@ class InitFluxLoRATraining:
             "loss_type": "l2",
             "width" : int(width),
             "height" : int(height),
+            "text_encoder_lr": 0,
+            "network_train_unet_only": True,
+            "t5xxl_max_token_length": 512,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
@@ -264,12 +298,6 @@ class InitFluxLoRATraining:
         }
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
 
-        if optimizer_settings["optimizer_type"] == "adafactor":
-            config_dict["optimizer_args"] = [
-                "relative_step=False",
-                "scale_parameter=False",
-                "warmup_init=False"
-            ]
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
 
@@ -296,7 +324,7 @@ class InitFluxTraining:
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
             "dataset_settings": ("TOML_DATASET",),
-            "optimizer_settings": ("OPTIMIZER_SETTINGS",),
+            "optimizer_settings": ("ARGS",),
             "output_name": ("STRING", {"default": "flux", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False, "tooltip": "output directory, root is ComfyUI folder"}),
             "learning_rate": ("FLOAT", {"default": 5e-5, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "learning rate"}),
@@ -328,12 +356,12 @@ class InitFluxTraining:
             },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", )
-    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path",)
+    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", "KOHYA_ARGS")
+    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path", "args")
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, optimizer_settings, dataset_settings, sample_prompts, output_name, optimizer_type, 
+    def init_training(self, flux_models, optimizer_settings, dataset_settings, sample_prompts, output_name, 
                       attention_mode, gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
@@ -390,11 +418,10 @@ class InitFluxTraining:
             "max_data_loader_n_workers": 0,
             "seed": 42,
             "gradient_checkpointing": True,
-            "save_precision": "bf16",
             "dataset_config": dataset,
             "output_dir": output_dir,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
-            "optimizer_type": optimizer_type,
+            "network_module": "networks.lora_flux",
             "width" : int(width),
             "height" : int(height),
 
@@ -411,13 +438,6 @@ class InitFluxTraining:
         }
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
 
-        if optimizer_settings["optimizer_type"] == "adafactor":
-            config_dict["optimizer_args"] = [
-                "relative_step=False",
-                "scale_parameter=False",
-                "warmup_init=False"
-            ]
-            config_dict["max_grad_norm"] = 0
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
 
@@ -436,7 +456,83 @@ class InitFluxTraining:
             "network_trainer": network_trainer,
             "training_loop": training_loop,
         }
-        return (trainer, epochs_count, final_output_path)
+        return (trainer, epochs_count, final_output_path, args)
+
+class InitFluxTrainingFromPreset:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "flux_models": ("TRAIN_FLUX_MODELS",),
+            "dataset_settings": ("TOML_DATASET",),
+            "preset_args": ("KOHYA_ARGS",),
+            "output_name": ("STRING", {"default": "flux", "multiline": False}),
+            "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False, "tooltip": "output directory, root is ComfyUI folder"}),
+            "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
+            },
+        }
+
+    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", "KOHYA_ARGS")
+    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path", "args")
+    FUNCTION = "init_training"
+    CATEGORY = "FluxTrainer"
+
+    def init_training(self, flux_models, dataset_settings, sample_prompts, output_name, preset_args, **kwargs,):
+        mm.soft_empty_cache()
+
+        dataset = dataset_settings["dataset"]
+        dataset_repeats = dataset_settings["repeats"]
+        
+        parser = train_setup_parser()
+        args, _ = parser.parse_known_args()
+        for key, value in vars(preset_args).items():
+            setattr(args, key, value)
+        
+        output_dir = os.path.join(script_directory, "output")
+        if '|' in sample_prompts:
+            prompts = sample_prompts.split('|')
+        else:
+            prompts = [sample_prompts]
+
+        width, height = toml.loads(dataset)["datasets"][0]["resolution"]
+        config_dict = {
+            "sample_prompts": prompts,
+            "dataset_repeats": dataset_repeats,
+            "num_cpu_threads_per_process": 1,
+            "pretrained_model_name_or_path": flux_models["transformer"],
+            "clip_l": flux_models["clip_l"],
+            "t5xxl": flux_models["t5"],
+            "ae": flux_models["vae"],
+            "save_model_as": "safetensors",
+            "persistent_data_loader_workers": False,
+            "max_data_loader_n_workers": 0,
+            "seed": 42,
+            "gradient_checkpointing": True,
+            "dataset_config": dataset,
+            "output_dir": output_dir,
+            "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{args.save_precision}",
+            "width" : int(width),
+            "height" : int(height),
+
+        }
+
+        config_dict.update(kwargs)
+
+        for key, value in config_dict.items():
+            setattr(args, key, value)
+
+        with torch.inference_mode(False):
+            network_trainer = FluxNetworkTrainer()
+            training_loop = network_trainer.init_train(args)
+
+        final_output_path = os.path.join(output_dir, output_name)
+
+        epochs_count = network_trainer.num_train_epochs
+
+        trainer = {
+            "network_trainer": network_trainer,
+            "training_loop": training_loop,
+        }
+        return (trainer, epochs_count, final_output_path, args)
     
 class FluxTrainLoop:
     @classmethod
@@ -482,16 +578,18 @@ class FluxTrainSave:
     def INPUT_TYPES(s):
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
-            "save_state": ("BOOLEAN", {"default": False}),
+            "save_state": ("BOOLEAN", {"default": False, "tooltip": "save the whole model state as well"}),
+            "copy_to_comfy_lora_folder": ("BOOLEAN", {"default": False, "tooltip": "copy the lora model to the comfy lora folder"}),
              },
         }
 
     RETURN_TYPES = ("NETWORKTRAINER", "STRING", "INT",)
     RETURN_NAMES = ("network_trainer","lora_path", "steps",)
-    FUNCTION = "endtrain"
+    FUNCTION = "save"
     CATEGORY = "FluxTrainer"
 
-    def endtrain(self, network_trainer, save_state):
+    def save(self, network_trainer, save_state, copy_to_comfy_lora_folder):
+        import shutil
         with torch.inference_mode(False):
             trainer = network_trainer["network_trainer"]
             global_step = trainer.global_step
@@ -508,6 +606,9 @@ class FluxTrainSave:
                 train_util.save_and_remove_state_stepwise(trainer.args, trainer.accelerator, global_step)
 
             lora_path = os.path.join(trainer.args.output_dir, ckpt_name)
+            if copy_to_comfy_lora_folder:
+                shutil.copy(lora_path, os.path.join(folder_paths.models_dir, "loras", "flux_trainer", ckpt_name))
+        
             
         return (network_trainer, lora_path, global_step)
     
@@ -628,6 +729,10 @@ class VisualizeLoss:
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
             "plot_style": (plt.style.available,{"default": 'default', "tooltip": "matplotlib plot style"}),
+            "window_size": ("INT", {"default": 100, "min": 0, "max": 10000, "step": 1, "tooltip": "the window size of the moving average"}),
+            "normalize_y": ("BOOLEAN", {"default": True, "tooltip": "normalize the y-axis to 0"}),
+            "width": ("INT", {"default": 768, "min": 256, "max": 4096, "step": 2, "tooltip": "width of the plot in pixels"}),
+            "height": ("INT", {"default": 512, "min": 256, "max": 4096, "step": 2, "tooltip": "height of the plot in pixels"}),
              },
         }
 
@@ -636,16 +741,29 @@ class VisualizeLoss:
     FUNCTION = "draw"
     CATEGORY = "FluxTrainer"
 
-    def draw(self, network_trainer, plot_style):
+    def draw(self, network_trainer, window_size, plot_style, normalize_y, width, height):
+        import numpy as np
         loss_values = network_trainer["network_trainer"].loss_recorder.global_loss_list
+
+        # Apply moving average
+        def moving_average(values, window_size):
+            return np.convolve(values, np.ones(window_size) / window_size, mode='valid')
+        if window_size > 0:
+            loss_values = moving_average(loss_values, window_size)
 
         plt.style.use(plot_style)
 
+        # Convert pixels to inches (assuming 100 pixels per inch)
+        width_inches = width / 100
+        height_inches = height / 100
+
         # Create a plot
-        fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(width_inches, height_inches))
         ax.plot(loss_values, label='Training Loss')
         ax.set_xlabel('Step')
         ax.set_ylabel('Loss')
+        if normalize_y:
+            plt.ylim(bottom=0)
         ax.set_title('Training Loss Over Time')
         ax.legend()
         ax.grid(True)
@@ -1030,7 +1148,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainSave": FluxTrainSave,
     "FluxKohyaInferenceSampler": FluxKohyaInferenceSampler,
     "UploadToHuggingFace": UploadToHuggingFace,
-    "OptimizerConfig": OptimizerConfig
+    "OptimizerConfig": OptimizerConfig,
+    "OptimizerConfigAdafactor": OptimizerConfigAdafactor
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1045,5 +1164,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainSave": "Flux Train Save",
     "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler",
     "UploadToHuggingFace": "Upload To HuggingFace",
-    "OptimizerConfig": "Optimizer Config"
+    "OptimizerConfig": "Optimizer Config",
+    "OptimizerConfigAdafactor": "Optimizer Config Adafactor"
 }
