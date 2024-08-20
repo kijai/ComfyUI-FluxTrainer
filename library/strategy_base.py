@@ -186,8 +186,8 @@ class LatentsCachingStrategy:
 
     @classmethod
     def set_strategy(cls, strategy):
-        if cls._strategy is not None:
-            raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
+        #if cls._strategy is not None:
+        #    raise RuntimeError(f"Internal error. {cls.__name__} strategy is already set")
         cls._strategy = strategy
 
     @classmethod
