@@ -8,6 +8,7 @@ import comfy.utils
 import toml
 import json
 import time
+import shutil
 from pathlib import Path
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
@@ -245,7 +246,11 @@ class InitFluxLoRATraining:
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
-
+        total, used, free = shutil.disk_usage(kwargs["output_dir"])
+        required_free_space = 2 * (2**30)
+        if free <= required_free_space:
+            raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
+        
         dataset_toml = toml.dumps(json.loads(dataset))
         parser = train_network_setup_parser()
         args, _ = parser.parse_known_args()
@@ -382,6 +387,11 @@ class InitFluxTraining:
     def init_training(self, flux_models, optimizer_settings, dataset, sample_prompts, output_name, 
                       attention_mode, gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
+
+        total, used, free = shutil.disk_usage(kwargs["output_dir"])
+        required_free_space = 20 * (2**30)
+        if free <= required_free_space:
+            raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
 
         dataset_toml = toml.dumps(json.loads(dataset))
         
