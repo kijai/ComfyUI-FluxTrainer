@@ -60,10 +60,44 @@ class FluxTrainModelSelect:
         
         return (flux_models,)
 
-class TrainDatasetConfig:
+class TrainDatasetGeneralConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
+            "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
+            "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
+            "shuffle_caption": ("BOOLEAN",{"default": False, "tooltip": "shuffle caption"}),
+            "caption_tag_dropout_rate": ("FLOAT",{"default": 0, "tooltip": "tag dropout rate"}),
+            },
+        }
+
+    RETURN_TYPES = ("JSON",)
+    RETURN_NAMES = ("dataset_general",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, shuffle_caption, caption_tag_dropout_rate, color_aug, flip_aug):
+        
+        dataset = {
+           "general": {
+                "shuffle_caption": shuffle_caption,
+                "caption_extension": ".txt",
+                "keep_tokens_separator": "|||",
+                "caption_tag_dropout_rate": caption_tag_dropout_rate,
+                "color_aug": color_aug,
+                "flip_aug": flip_aug,
+           },
+           "datasets": []
+        }
+        dataset_json = json.dumps(dataset, indent=2)
+        print(dataset_json)
+        return (dataset_json,)
+
+class TrainDatasetAdd:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "dataset_config": ("JSON",),
             "width": ("INT",{"min": 64, "default": 1024, "tooltip": "image width when bucketing is not used, also the default validation sampling width"}),
             "height": ("INT",{"min": 64, "default": 1024, "tooltip": "image height when bucketing is not used, also the default validation sampling height"}),
             "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more. "}),
@@ -71,59 +105,49 @@ class TrainDatasetConfig:
             "class_tokens": ("STRING",{"multiline": True, "default": ""}),
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
             "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "bucket reso is defined by image size automatically"}),
-            "min_bucket_reso": ("INT",{"min": 64, "default": 256}),
-            "max_bucket_resos": ("STRING",{"default": "1024, 768, 512", "tooltip": "comma separated list of bucket resos, when multiple are given the nearest to the original is used"}),
-            "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
-            "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
-            "dataset_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
+            "num_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
             },
         }
 
-    RETURN_TYPES = ("TOML_DATASET",)
+    RETURN_TYPES = ("JSON",)
     RETURN_NAMES = ("dataset",)
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, dataset_path, class_tokens, width, height, batch_size, dataset_repeats, enable_bucket, color_aug, flip_aug, 
-                  bucket_no_upscale, min_bucket_reso, max_bucket_resos):
+    def create_config(self, dataset_config, dataset_path, class_tokens, width, height, batch_size, num_repeats, enable_bucket,  
+                  bucket_no_upscale):
         
-
         dataset = {
-           "general": {
-               "shuffle_caption": False,
-               "caption_extension": ".txt",
-           },
            "datasets": [
                {
                    "resolution": (width, height),
                    "batch_size": batch_size,
-                   "keep_tokens": 2,
                    "enable_bucket": enable_bucket,
                    "bucket_no_upscale": bucket_no_upscale,
-                   "min_bucket_reso": min_bucket_reso,
-                   "max_bucket_resos": [int(x.strip()) for x in max_bucket_resos.split(',')],
-                   "color_aug": color_aug,
-                   "flip_aug": flip_aug,
+                  
                    "subsets": [
                        {
                            "image_dir": dataset_path,
-                           "class_tokens": class_tokens
+                           "class_tokens": class_tokens,
+                           "num_repeats": num_repeats
                        }
                    ]
                }
            ]
         }
-        dataset_settings = {
-            "repeats": dataset_repeats,
-            "dataset": toml.dumps(dataset)
-        }
-        return (dataset_settings,)
+        
+        updated_dataset = json.loads(dataset_config)
+        updated_dataset["datasets"].extend(dataset["datasets"])
+        
+        updated_dataset_json = json.dumps(updated_dataset, indent=2)
+        print(updated_dataset_json)
+        return (updated_dataset_json,)
 
 class OptimizerConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "optimizer_type": (["adamw8bit", "prodigy", "CAME"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
+            "optimizer_type": (["adamw8bit", "adamw","prodigy", "CAME"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
             "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
             "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup"], {"default": "constant", "tooltip": "learning rate scheduler"}),
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
@@ -178,7 +202,7 @@ class InitFluxLoRATraining:
     def INPUT_TYPES(s):
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
-            "dataset_settings": ("TOML_DATASET",),
+            "dataset": ("JSON",),
             "optimizer_settings": ("ARGS",),
             "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False}),
@@ -218,13 +242,11 @@ class InitFluxLoRATraining:
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, dataset_settings, optimizer_settings, sample_prompts, output_name, attention_mode, 
+    def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
-        dataset = dataset_settings["dataset"]
-        dataset_repeats = dataset_settings["repeats"]
-        
+        dataset_toml = toml.dumps(json.loads(dataset))
         parser = train_network_setup_parser()
         args, _ = parser.parse_known_args()
 
@@ -259,11 +281,9 @@ class InitFluxLoRATraining:
         else:
             prompts = [sample_prompts]
 
-        width, height = toml.loads(dataset)["datasets"][0]["resolution"]
         config_dict = {
             "sample_prompts": prompts,
             "save_precision": save_dtype,
-            "dataset_repeats": dataset_repeats,
             "mixed_precision": "bf16",
             "num_cpu_threads_per_process": 1,
             "pretrained_model_name_or_path": flux_models["transformer"],
@@ -276,12 +296,12 @@ class InitFluxLoRATraining:
             "seed": 42,
             "gradient_checkpointing": True,
             "network_module": "networks.lora_flux",
-            "dataset_config": dataset,
+            "dataset_config": dataset_toml,
             "output_dir": output_dir,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
-            "width" : int(width),
-            "height" : int(height),
+            "width" : 1024,
+            "height" : 1024,
             "text_encoder_lr": 0,
             "network_train_unet_only": True,
             "t5xxl_max_token_length": 512,
@@ -308,8 +328,6 @@ class InitFluxLoRATraining:
             network_trainer = FluxNetworkTrainer()
             training_loop = network_trainer.init_train(args)
 
-        final_output_lora_path = os.path.join(output_dir, output_name)
-
         epochs_count = network_trainer.num_train_epochs
 
         trainer = {
@@ -323,7 +341,7 @@ class InitFluxTraining:
     def INPUT_TYPES(s):
         return {"required": {
             "flux_models": ("TRAIN_FLUX_MODELS",),
-            "dataset_settings": ("TOML_DATASET",),
+            "dataset": ("JSON",),
             "optimizer_settings": ("ARGS",),
             "output_name": ("STRING", {"default": "flux", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False, "tooltip": "output directory, root is ComfyUI folder"}),
@@ -361,12 +379,11 @@ class InitFluxTraining:
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
-    def init_training(self, flux_models, optimizer_settings, dataset_settings, sample_prompts, output_name, 
+    def init_training(self, flux_models, optimizer_settings, dataset, sample_prompts, output_name, 
                       attention_mode, gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
-        dataset = dataset_settings["dataset"]
-        dataset_repeats = dataset_settings["repeats"]
+        dataset_toml = toml.dumps(json.loads(dataset))
         
         parser = train_setup_parser()
         args, _ = parser.parse_known_args()
@@ -402,11 +419,9 @@ class InitFluxTraining:
         else:
             prompts = [sample_prompts]
 
-        width, height = toml.loads(dataset)["datasets"][0]["resolution"]
         config_dict = {
             "sample_prompts": prompts,
             "save_precision": save_dtype,
-            "dataset_repeats": dataset_repeats,
             "mixed_precision": "bf16",
             "num_cpu_threads_per_process": 1,
             "pretrained_model_name_or_path": flux_models["transformer"],
@@ -418,12 +433,12 @@ class InitFluxTraining:
             "max_data_loader_n_workers": 0,
             "seed": 42,
             "gradient_checkpointing": True,
-            "dataset_config": dataset,
+            "dataset_config": dataset_toml,
             "output_dir": output_dir,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "network_module": "networks.lora_flux",
-            "width" : int(width),
-            "height" : int(height),
+            "width" : 1024,
+            "height" : 1024,
 
         }
         attention_settings = {
@@ -1139,7 +1154,8 @@ NODE_CLASS_MAPPINGS = {
     "InitFluxLoRATraining": InitFluxLoRATraining,
     "InitFluxTraining": InitFluxTraining,
     "FluxTrainModelSelect": FluxTrainModelSelect,
-    "TrainDatasetConfig": TrainDatasetConfig,
+    "TrainDatasetGeneralConfig": TrainDatasetGeneralConfig,
+    "TrainDatasetAdd": TrainDatasetAdd,
     "FluxTrainLoop": FluxTrainLoop,
     "VisualizeLoss": VisualizeLoss,
     "FluxTrainValidate": FluxTrainValidate,
@@ -1155,7 +1171,8 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
     "InitFluxTraining": "Init Flux Training",
     "FluxTrainModelSelect": "FluxTrain ModelSelect",
-    "TrainDatasetConfig": "Train Dataset Config",
+    "TrainDatasetGeneralConfig": "TrainDatasetGeneralConfig",
+    "TrainDatasetAdd": "TrainDatasetAdd",
     "FluxTrainLoop": "Flux Train Loop",
     "VisualizeLoss": "Visualize Loss",
     "FluxTrainValidate": "Flux Train Validate",
