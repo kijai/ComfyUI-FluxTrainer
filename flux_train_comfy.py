@@ -280,7 +280,8 @@ class FluxTrainer:
 
         flux.requires_grad_(True)
 
-        if args.double_blocks_to_swap is not None or args.single_blocks_to_swap is not None:
+        is_swapping_blocks = args.double_blocks_to_swap is not None or args.single_blocks_to_swap is not None
+        if is_swapping_blocks:
             # Swap blocks between CPU and GPU to reduce memory usage, in forward and backward passes.
             # This idea is based on 2kpr's great work. Thank you!
             logger.info(
@@ -433,8 +434,11 @@ class FluxTrainer:
             training_models = [ds_model]
 
         else:
-            # acceleratorがなんかよろしくやってくれるらしい
-            flux = accelerator.prepare(flux)
+             # accelerator does some magic
+            # if we doesn't swap blocks, we can move the model to device
+            flux = accelerator.prepare(flux, device_placement=[not is_swapping_blocks])
+            if is_swapping_blocks:
+                flux.move_to_device_except_swap_blocks(accelerator.device)  # reduce peak memory usage
             optimizer, train_dataloader, lr_scheduler = accelerator.prepare(optimizer, train_dataloader, lr_scheduler)
 
         # 実験的機能：勾配も含めたfp16学習を行う　PyTorchにパッチを当ててfp16でのgrad scaleを有効にする
@@ -560,7 +564,7 @@ class FluxTrainer:
                 init_kwargs=init_kwargs,
             )
 
-        if args.double_blocks_to_swap is not None or args.single_blocks_to_swap is not None:
+        if is_swapping_blocks:
             flux.prepare_block_swap_before_forward()
 
         # For --sample_at_first
@@ -625,7 +629,7 @@ class FluxTrainer:
 
                     # get noisy model input and timesteps
                     noisy_model_input, timesteps, sigmas = flux_train_utils.get_noisy_model_input_and_timesteps(
-                        args, noise_scheduler, latents, noise, accelerator.device, weight_dtype
+                        args, noise_scheduler_copy, latents, noise, accelerator.device, weight_dtype
                     )
 
                     # pack latents and get img_ids
