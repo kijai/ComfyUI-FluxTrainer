@@ -4,10 +4,10 @@ import os
 import time
 import torch
 from safetensors.torch import load_file, save_file
-from library import sai_model_spec, train_util
-import library.model_util as model_util
+from ..library import sai_model_spec, train_util
+from ..library import model_util as model_util
 import lora
-from .utils import setup_logging
+from ..library.utils import setup_logging
 setup_logging()
 import logging
 logger = logging.getLogger(__name__)

@@ -266,7 +266,7 @@ class LatentsCachingStrategy:
         """
         Default implementation for cache_batch_latents. Image loading, VAE, flipping, alpha mask handling are common.
         """
-        from library import train_util  # import here to avoid circular import
+        from . import train_util  # import here to avoid circular import
 
         img_tensor, alpha_masks, original_sizes, crop_ltrbs = train_util.load_images_and_masks_for_caching(
             image_infos, alpha_mask, random_crop

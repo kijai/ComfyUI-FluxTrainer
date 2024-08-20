@@ -9,9 +9,9 @@ from safetensors.torch import load_file, save_file, safe_open
 from tqdm import tqdm
 import numpy as np
 
-from library import train_util
-from library import model_util
-from .utils import setup_logging
+from ..library import train_util
+from ..library import model_util
+from ..library.utils import setup_logging
 
 setup_logging()
 import logging

@@ -12,7 +12,7 @@ import numpy as np
 import torch
 import re
 from .utils import setup_logging
-from library.sdxl_original_unet import SdxlUNet2DConditionModel
+from ..library.sdxl_original_unet import SdxlUNet2DConditionModel
 
 setup_logging()
 import logging
@@ -769,7 +769,7 @@ def convert_diffusers_to_sai_if_needed(weights_sd):
     if not found_up_down_blocks:
         return
 
-    from library.sdxl_model_util import make_unet_conversion_map
+    from ..library.sdxl_model_util import make_unet_conversion_map
 
     unet_conversion_map = make_unet_conversion_map()
     unet_conversion_map = {hf.replace(".", "_")[:-1]: sd.replace(".", "_")[:-1] for sd, hf in unet_conversion_map}
@@ -1259,7 +1259,7 @@ class LoRANetwork(torch.nn.Module):
 
         if os.path.splitext(file)[1] == ".safetensors":
             from safetensors.torch import save_file
-            from library import train_util
+            from ..library import train_util
 
             # Precalculate model hashes to save time on indexing
             if metadata is None:

@@ -5,9 +5,9 @@ import torch
 import numpy as np
 from transformers import CLIPTokenizer, T5TokenizerFast
 
-from library import sd3_utils, train_util
-from library import sd3_models
-from library.strategy_base import LatentsCachingStrategy, TextEncodingStrategy, TokenizeStrategy, TextEncoderOutputsCachingStrategy
+from . import sd3_utils, train_util
+from . import sd3_models
+from .strategy_base import LatentsCachingStrategy, TextEncodingStrategy, TokenizeStrategy, TextEncoderOutputsCachingStrategy
 
 from .utils import setup_logging
 

@@ -7,7 +7,6 @@ from safetensors.torch import load_file
 from accelerate import init_empty_weights
 from transformers import CLIPTextModel, CLIPConfig, T5EncoderModel, T5Config
 
-#from library import flux_models
 from .flux_models import Flux, AutoEncoder, configs
 from .utils import setup_logging
 
