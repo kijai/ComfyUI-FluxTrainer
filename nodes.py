@@ -389,7 +389,7 @@ class InitFluxTraining:
         mm.soft_empty_cache()
 
         total, used, free = shutil.disk_usage(kwargs["output_dir"])
-        required_free_space = 20 * (2**30)
+        required_free_space = 25 * (2**30)
         if free <= required_free_space:
             raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
 

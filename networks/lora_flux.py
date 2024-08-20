@@ -668,12 +668,11 @@ class LoRANetwork(torch.nn.Module):
 
         if os.path.splitext(file)[1] == ".safetensors":
             from safetensors.torch import save_file
-            from ..library import train_util
 
             # Precalculate model hashes to save time on indexing
             if metadata is None:
                 metadata = {}
-            model_hash, legacy_hash = train_util.precalculate_safetensors_hashes(state_dict, metadata)
+            model_hash, legacy_hash = precalculate_safetensors_hashes(state_dict, metadata)
             metadata["sshs_model_hash"] = model_hash
             metadata["sshs_legacy_hash"] = legacy_hash
 
@@ -760,3 +759,40 @@ class LoRANetwork(torch.nn.Module):
             norms.append(scalednorm.item())
 
         return keys_scaled, sum(norms) / len(norms), max(norms)
+    
+def precalculate_safetensors_hashes(tensors, metadata):
+        """Precalculate the model hashes needed by sd-webui-additional-networks to
+        save time on indexing the model later."""
+    
+        import hashlib
+        import safetensors.torch
+        from io import BytesIO
+    
+        # Retain only training metadata for hash calculation
+        metadata = {k: v for k, v in metadata.items() if k.startswith("ss_")}
+        bytes = safetensors.torch.save(tensors, metadata)
+        b = BytesIO(bytes)
+    
+        def addnet_hash_legacy(b):
+            """Old model hash used by sd-webui-additional-networks for .safetensors format files"""
+            m = hashlib.sha256()
+            b.seek(0x100000)
+            m.update(b.read(0x10000))
+            return m.hexdigest()[0:8]
+    
+        def addnet_hash_safetensors(b):
+            """New model hash used by sd-webui-additional-networks for .safetensors format files"""
+            hash_sha256 = hashlib.sha256()
+            blksize = 1024 * 1024
+            b.seek(0)
+            header = b.read(8)
+            n = int.from_bytes(header, "little")
+            offset = n + 8
+            b.seek(offset)
+            for chunk in iter(lambda: b.read(blksize), b""):
+                hash_sha256.update(chunk)
+            return hash_sha256.hexdigest()
+    
+        model_hash = addnet_hash_safetensors(b)
+        legacy_hash = addnet_hash_legacy(b)
+        return model_hash, legacy_hash
