@@ -123,7 +123,7 @@ class OptimizerConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "optimizer_type": (["adamw8bit", "prodigy"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
+            "optimizer_type": (["adamw8bit", "prodigy", "CAME"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
             "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
             "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup"], {"default": "constant", "tooltip": "learning rate scheduler"}),
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),

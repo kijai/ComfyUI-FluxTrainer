@@ -4547,6 +4547,20 @@ def get_optimizer(args, trainable_params):
         optimizer_class = torch.optim.AdamW
         optimizer = optimizer_class(trainable_params, lr=lr, **optimizer_kwargs)
 
+    elif optimizer_type == "CAME".lower():
+        logger.info(f"use CAME optimizer | {optimizer_kwargs}")
+        try:
+            import came_pytorch
+        except ImportError:
+            raise ImportError("No came-pytorch")
+        try:
+            optimizer_class = came_pytorch.CAME
+        except AttributeError:
+            raise AttributeError(
+                "No CAME. Please install came-pytorch."
+            )
+        optimizer = optimizer_class(trainable_params, lr=lr, **optimizer_kwargs)
+
     if optimizer is None:
         # 任意のoptimizerを使う
         optimizer_type = args.optimizer_type  # lowerでないやつ（微妙）
