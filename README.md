@@ -8,8 +8,15 @@ I can not emphasize this enough, this repository is not for raising questions re
 
 The default settings aren't necessarily any good, they are just the last (out of many) I've tried and worked for my dataset.
 
-# EXPERIMENTAL
+# THIS IS EXPERIMENTAL
 Both these nodes and the underlaying implementation by kohya is work in progress and expected to change. 
+
+# Installation
+1. Clone this repo into `custom_nodes` folder.
+2. Install dependencies: `pip install -r requirements.txt`
+   or if you use the portable install, run this in ComfyUI_windows_portable -folder:
+
+  `python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-FluxTrainer\requirements.txt`
 
 ## Why train in ComfyUI?
 - Familiar UI (obviously only if you are a Comfy user already)
