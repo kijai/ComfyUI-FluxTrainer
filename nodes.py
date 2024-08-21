@@ -68,7 +68,7 @@ class TrainDatasetGeneralConfig:
             "color_aug": ("BOOLEAN",{"default": False, "tooltip": "enable weak color augmentation"}),
             "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
             "shuffle_caption": ("BOOLEAN",{"default": False, "tooltip": "shuffle caption"}),
-            "caption_tag_dropout_rate": ("FLOAT",{"default": 0, "tooltip": "tag dropout rate"}),
+            "caption_dropout_rate": ("FLOAT",{"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "tag dropout rate"}),
             },
         }
 
@@ -77,14 +77,14 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_tag_dropout_rate, color_aug, flip_aug):
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug):
         
         dataset = {
            "general": {
                 "shuffle_caption": shuffle_caption,
                 "caption_extension": ".txt",
                 "keep_tokens_separator": "|||",
-                "caption_tag_dropout_rate": caption_tag_dropout_rate,
+                "caption_dropout_rate": caption_dropout_rate,
                 "color_aug": color_aug,
                 "flip_aug": flip_aug,
            },
@@ -103,7 +103,7 @@ class TrainDatasetAdd:
             "height": ("INT",{"min": 64, "default": 1024, "tooltip": "image height when bucketing is not used, also the default validation sampling height"}),
             "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more. "}),
             "dataset_path": ("STRING",{"multiline": True, "default": "", "tooltip": "path to dataset, root is ComfyUI folder"}),
-            "class_tokens": ("STRING",{"multiline": True, "default": ""}),
+            "class_tokens": ("STRING",{"multiline": True, "default": "", "tooltip": "class token, aka trigger word"}),
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
             "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "bucket reso is defined by image size automatically"}),
             "num_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
@@ -246,10 +246,11 @@ class InitFluxLoRATraining:
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
-        try:
-            total, used, free = shutil.disk_usage(kwargs.get("output_dir"))
-        except:
-            total, used, free = shutil.disk_usage(script_directory)
+
+        output_dir = os.path.abspath(kwargs.get("output_dir"))
+    
+        total, used, free = shutil.disk_usage(output_dir)
+ 
         required_free_space = 2 * (2**30)
         if free <= required_free_space:
             raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
@@ -282,8 +283,6 @@ class InitFluxLoRATraining:
             kwargs["cache_text_encoder_outputs"] = False
             kwargs["cache_text_encoder_outputs_to_disk"] = False
 
-        
-        output_dir = os.path.join(script_directory, "output")
         if '|' in sample_prompts:
             prompts = sample_prompts.split('|')
         else:
@@ -305,7 +304,6 @@ class InitFluxLoRATraining:
             "gradient_checkpointing": True,
             "network_module": "networks.lora_flux",
             "dataset_config": dataset_toml,
-            "output_dir": output_dir,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
             "width" : 1024,
@@ -337,6 +335,11 @@ class InitFluxLoRATraining:
             training_loop = network_trainer.init_train(args)
 
         epochs_count = network_trainer.num_train_epochs
+
+        os.makedirs(output_dir, exist_ok=True)
+        saved_args_file_path = os.path.join(output_dir, f"{output_name}_args.json")
+        with open(saved_args_file_path, 'w') as f:
+            json.dump(vars(args), f, indent=4)
 
         trainer = {
             "network_trainer": network_trainer,
@@ -382,8 +385,8 @@ class InitFluxTraining:
             },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER", "INT", "STRING", "KOHYA_ARGS")
-    RETURN_NAMES = ("network_trainer", "epochs_count", "output_path", "args")
+    RETURN_TYPES = ("NETWORKTRAINER", "INT", "KOHYA_ARGS")
+    RETURN_NAMES = ("network_trainer", "epochs_count", "args")
     FUNCTION = "init_training"
     CATEGORY = "FluxTrainer"
 
@@ -391,10 +394,9 @@ class InitFluxTraining:
                       attention_mode, gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
-        try:
-            total, used, free = shutil.disk_usage(kwargs.get("output_dir"))
-        except:
-            total, used, free = shutil.disk_usage(script_directory)
+        output_dir = os.path.abspath(kwargs.get("output_dir"))
+    
+        total, used, free = shutil.disk_usage(output_dir)
         required_free_space = 25 * (2**30)
         if free <= required_free_space:
             raise ValueError(f"Most likely insufficient disk space to complete training. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
@@ -428,8 +430,6 @@ class InitFluxTraining:
             kwargs["cache_text_encoder_outputs"] = False
             kwargs["cache_text_encoder_outputs_to_disk"] = False
 
-        
-        output_dir = os.path.join(script_directory, "output")
         if '|' in sample_prompts:
             prompts = sample_prompts.split('|')
         else:
@@ -450,7 +450,6 @@ class InitFluxTraining:
             "seed": 42,
             "gradient_checkpointing": True,
             "dataset_config": dataset_toml,
-            "output_dir": output_dir,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "network_module": "networks.lora_flux",
             "width" : 1024,
@@ -479,15 +478,18 @@ class InitFluxTraining:
             network_trainer = FluxTrainer()
             training_loop = network_trainer.init_train(args)
 
-        final_output_path = os.path.join(output_dir, output_name)
-
         epochs_count = network_trainer.num_train_epochs
+
+        os.makedirs(output_dir, exist_ok=True)
+        saved_args_file_path = os.path.join(output_dir, f"{output_name}_args.json")
+        with open(saved_args_file_path, 'w') as f:
+            json.dump(vars(args), f, indent=4)
 
         trainer = {
             "network_trainer": network_trainer,
             "training_loop": training_loop,
         }
-        return (trainer, epochs_count, final_output_path, args)
+        return (trainer, epochs_count, args)
 
 class InitFluxTrainingFromPreset:
     @classmethod

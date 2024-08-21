@@ -4094,23 +4094,23 @@ def add_dataset_arguments(
     )
 
     if support_caption_dropout:
-        # Textual Inversion はcaptionのdropoutをsupportしない
-        # いわゆるtensorのDropoutと紛らわしいのでprefixにcaptionを付けておく　every_n_epochsは他と平仄を合わせてdefault Noneに
-        parser.add_argument(
-            "--caption_dropout_rate", type=float, default=0.0, help="Rate out dropout caption(0.0~1.0) / captionをdropoutする割合"
-        )
-        parser.add_argument(
-            "--caption_dropout_every_n_epochs",
-            type=int,
-            default=0,
-            help="Dropout all captions every N epochs / captionを指定エポックごとにdropoutする",
-        )
-        parser.add_argument(
-            "--caption_tag_dropout_rate",
-            type=float,
-            default=0.0,
-            help="Rate out dropout comma separated tokens(0.0~1.0) / カンマ区切りのタグをdropoutする割合",
-        )
+       # Textual Inversion does not support caption dropout
+       # To avoid confusion with tensor Dropout, prefix with caption. Set every_n_epochs to None by default to match others
+       parser.add_argument(
+           "--caption_dropout_rate", type=float, default=0.0, help="Rate of dropout caption (0.0~1.0) / Percentage of captions to dropout"
+       )
+       parser.add_argument(
+           "--caption_dropout_every_n_epochs",
+           type=int,
+           default=0,
+           help="Dropout all captions every N epochs / Dropout captions every specified number of epochs",
+       )
+       parser.add_argument(
+           "--caption_tag_dropout_rate",
+           type=float,
+           default=0.0,
+           help="Rate of dropout comma separated tokens (0.0~1.0) / Percentage of comma-separated tags to dropout",
+       )
 
     if support_dreambooth:
         # DreamBooth dataset
