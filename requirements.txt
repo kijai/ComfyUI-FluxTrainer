@@ -16,6 +16,7 @@ huggingface-hub>=0.24.5
 # for Image utils
 imagesize>=1.4.1
 rich>=13.7.0
+came_pytorch
+matplotlib
 # for T5XXL tokenizer (SD3/FLUX)
 sentencepiece>=0.2.0
-matplotlib

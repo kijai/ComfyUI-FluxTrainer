@@ -246,7 +246,10 @@ class InitFluxLoRATraining:
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
-        total, used, free = shutil.disk_usage(kwargs["output_dir"])
+        try:
+            total, used, free = shutil.disk_usage(kwargs.get("output_dir"))
+        except:
+            total, used, free = shutil.disk_usage(script_directory)
         required_free_space = 2 * (2**30)
         if free <= required_free_space:
             raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
@@ -388,10 +391,13 @@ class InitFluxTraining:
                       attention_mode, gradient_dtype, save_dtype, **kwargs,):
         mm.soft_empty_cache()
 
-        total, used, free = shutil.disk_usage(kwargs["output_dir"])
+        try:
+            total, used, free = shutil.disk_usage(kwargs.get("output_dir"))
+        except:
+            total, used, free = shutil.disk_usage(script_directory)
         required_free_space = 25 * (2**30)
         if free <= required_free_space:
-            raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
+            raise ValueError(f"Most likely insufficient disk space to complete training. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
 
         dataset_toml = toml.dumps(json.loads(dataset))
         
