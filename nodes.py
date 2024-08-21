@@ -248,6 +248,7 @@ class InitFluxLoRATraining:
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
+        os.makedirs(output_dir, exist_ok=True)
     
         total, used, free = shutil.disk_usage(output_dir)
  
@@ -336,7 +337,7 @@ class InitFluxLoRATraining:
 
         epochs_count = network_trainer.num_train_epochs
 
-        os.makedirs(output_dir, exist_ok=True)
+        
         saved_args_file_path = os.path.join(output_dir, f"{output_name}_args.json")
         with open(saved_args_file_path, 'w') as f:
             json.dump(vars(args), f, indent=4)
@@ -395,6 +396,7 @@ class InitFluxTraining:
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
+        os.makedirs(output_dir, exist_ok=True)
     
         total, used, free = shutil.disk_usage(output_dir)
         required_free_space = 25 * (2**30)
@@ -480,7 +482,7 @@ class InitFluxTraining:
 
         epochs_count = network_trainer.num_train_epochs
 
-        os.makedirs(output_dir, exist_ok=True)
+        
         saved_args_file_path = os.path.join(output_dir, f"{output_name}_args.json")
         with open(saved_args_file_path, 'w') as f:
             json.dump(vars(args), f, indent=4)
