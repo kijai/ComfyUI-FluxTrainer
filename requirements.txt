@@ -1,10 +1,10 @@
 accelerate>=0.33.0
+numpy<=1.26.4
 transformers>=4.44.0
 diffusers>=0.25.0
 ftfy>=6.1.1
 opencv-python>=4.7.0.68
 einops>=0.7.0
-#pytorch-lightning>=1.9.0
 bitsandbytes>=0.43.3
 prodigyopt>=1.0
 lion-pytorch>=0.0.6

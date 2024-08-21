@@ -935,14 +935,14 @@ class FluxKohyaInferenceSampler:
                 clip_l.to(ae_dtype)
                 t5xxl.to(ae_dtype)
                 with accelerator.autocast():
-                    l_pooled, t5_out, txt_ids = encoding_strategy.encode_tokens(
+                    _, t5_out, txt_ids, t5_attn_mask = encoding_strategy.encode_tokens(
                         tokenize_strategy, [clip_l, t5xxl], tokens_and_masks, apply_t5_attn_mask
                     )
             else:
                 with torch.autocast(device_type=device.type, dtype=dtype):
-                    l_pooled, _, _ = encoding_strategy.encode_tokens(tokenize_strategy, [clip_l, None], tokens_and_masks)
+                    l_pooled, _, _, _ = encoding_strategy.encode_tokens(tokenize_strategy, [clip_l, None], tokens_and_masks)
                 with torch.autocast(device_type=device.type, dtype=dtype):
-                    _, t5_out, txt_ids = encoding_strategy.encode_tokens(
+                    _, t5_out, txt_ids, t5_attn_mask = encoding_strategy.encode_tokens(
                         tokenize_strategy, [None, t5xxl], tokens_and_masks, apply_t5_attn_mask
                     )
         # NaN check
@@ -965,6 +965,7 @@ class FluxKohyaInferenceSampler:
         print("MODEL DTYPE: ", model.dtype)
 
         img_ids = img_ids.to(device)
+        t5_attn_mask = t5_attn_mask.to(device) if apply_t5_attn_mask else None
         def time_shift(mu: float, sigma: float, t: torch.Tensor):
             return math.exp(mu) / (math.exp(mu) + (1 / t - 1) ** sigma)
 
@@ -1003,14 +1004,23 @@ class FluxKohyaInferenceSampler:
             vec: torch.Tensor,
             timesteps: list[float],
             guidance: float = 4.0,
+            t5_attn_mask: Optional[torch.Tensor] = None,
         ):
             # this is ignored for schnell
             guidance_vec = torch.full((img.shape[0],), guidance, device=img.device, dtype=img.dtype)
             comfy_pbar = comfy.utils.ProgressBar(total=len(timesteps))
             for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
                 t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
-                pred = model(img=img, img_ids=img_ids, txt=txt, txt_ids=txt_ids, y=vec, timesteps=t_vec, guidance=guidance_vec)
-
+                pred = model(
+                    img=img,
+                    img_ids=img_ids,
+                    txt=txt,
+                    txt_ids=txt_ids,
+                    y=vec,
+                    timesteps=t_vec,
+                    guidance=guidance_vec,
+                    txt_attention_mask=t5_attn_mask,
+                )
                 img = img + (t_prev - t_curr) * pred
                 comfy_pbar.update(1)
 
@@ -1025,6 +1035,7 @@ class FluxKohyaInferenceSampler:
             txt_ids: torch.Tensor,
             num_steps: int,
             guidance: float,
+            t5_attn_mask: Optional[torch.Tensor],
             is_schnell: bool,
             device: torch.device,
             flux_dtype: torch.dtype,
@@ -1034,14 +1045,18 @@ class FluxKohyaInferenceSampler:
             # denoise initial noise
             if accelerator:
                 with accelerator.autocast(), torch.no_grad():
-                    x = denoise(model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance)
+                    x = denoise(
+                        model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance, t5_attn_mask=t5_attn_mask
+                    )
             else:
                 with torch.autocast(device_type=device.type, dtype=flux_dtype), torch.no_grad():
-                    x = denoise(model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance)
+                    x = denoise(
+                        model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance, t5_attn_mask=t5_attn_mask
+                    )
 
             return x
         
-        x = do_sample(accelerator, model, noise, img_ids, l_pooled, t5_out, txt_ids, steps, guidance_scale, True, device, dtype)
+        x = do_sample(accelerator, model, noise, img_ids, l_pooled, t5_out, txt_ids, steps, guidance_scale, t5_attn_mask, False, device, dtype)
         
         model = model.cpu()
         gc.collect()

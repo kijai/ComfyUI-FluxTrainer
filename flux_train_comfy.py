@@ -641,7 +641,9 @@ class FluxTrainer:
                     guidance_vec = torch.full((bsz,), args.guidance_scale, device=accelerator.device)
 
                     # call model
-                    l_pooled, t5_out, txt_ids = text_encoder_conds
+                    l_pooled, t5_out, txt_ids, t5_attn_mask = text_encoder_conds
+                    if not args.apply_t5_attn_mask:
+                        t5_attn_mask = None
                     with accelerator.autocast():
                         # YiYi notes: divide it by 1000 for now because we scale it by 1000 in the transformer model (we should not keep it but I want to keep the inputs same for the model for testing)
                         model_pred = flux(
