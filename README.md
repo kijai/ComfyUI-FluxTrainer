@@ -6,6 +6,8 @@ I have **very** little previous experience in training anything, Flux is basical
 ## DO NOT ASK ME FOR TRAINING ADVICE
 I can not emphasize this enough, this repository is not for raising questions related to the training itself, that would be better done to kohya's repo. Even so keep in mind my implementation may have mistakes.
 
+The default settings aren't necessarily any good, they are just the last (out of many) I've tried and worked for my dataset.
+
 # EXPERIMENTAL
 Both these nodes and the underlaying implementation by kohya is work in progress and expected to change. 
 
