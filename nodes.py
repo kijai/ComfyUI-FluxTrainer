@@ -236,6 +236,9 @@ class InitFluxLoRATraining:
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
             },
+            "optional": {
+                "additional_args": ("STRING", {"multiline": True, "default": "", "tooltip": "additional args to pass to the training command"}),
+            },
         }
 
     RETURN_TYPES = ("NETWORKTRAINER", "INT", "KOHYA_ARGS",)
@@ -244,7 +247,7 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, **kwargs,):
+                      gradient_dtype, save_dtype, additional_args=None,**kwargs,):
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -258,7 +261,11 @@ class InitFluxLoRATraining:
         
         dataset_toml = toml.dumps(json.loads(dataset))
         parser = train_network_setup_parser()
-        args, _ = parser.parse_known_args()
+        if additional_args is not None:
+            args, _ = parser.parse_known_args(args=[additional_args])
+        else:
+            args, _ = parser.parse_known_args()
+        print(args)
 
         if kwargs.get("cache_latents") == "memory":
             kwargs["cache_latents"] = True
@@ -384,6 +391,9 @@ class InitFluxTraining:
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "sample_prompts": ("STRING", {"multiline": True, "default": "illustration of a kitten | photograph of a turtle", "tooltip": "validation sample prompts, for multiple prompts, separate by `|`"}),
             },
+            "optional": {
+                "additional_args": ("STRING", {"multiline": True, "default": "", "tooltip": "additional args to pass to the training command"}),
+            },
         }
 
     RETURN_TYPES = ("NETWORKTRAINER", "INT", "KOHYA_ARGS")
@@ -392,7 +402,7 @@ class InitFluxTraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, optimizer_settings, dataset, sample_prompts, output_name, 
-                      attention_mode, gradient_dtype, save_dtype, **kwargs,):
+                      attention_mode, gradient_dtype, save_dtype, additional_args=None, **kwargs,):
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -406,7 +416,10 @@ class InitFluxTraining:
         dataset_toml = toml.dumps(json.loads(dataset))
         
         parser = train_setup_parser()
-        args, _ = parser.parse_known_args()
+        if additional_args is not None:
+            args, _ = parser.parse_known_args(args=[additional_args])
+        else:
+            args, _ = parser.parse_known_args()
 
         if kwargs.get("cache_latents") == "memory":
             kwargs["cache_latents"] = True
