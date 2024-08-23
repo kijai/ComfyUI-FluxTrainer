@@ -468,7 +468,6 @@ class InitFluxTraining:
             "gradient_checkpointing": True,
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_{save_dtype}",
-            "network_module": "networks.lora_flux",
             "width" : 1024,
             "height" : 1024,
             "mem_eff_save": True,
