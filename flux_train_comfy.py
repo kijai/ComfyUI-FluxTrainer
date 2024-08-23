@@ -804,7 +804,7 @@ class FluxTrainer:
 
                     accelerator.log(logs, step=self.global_step)
 
-                loss_recorder.add(epoch=epoch, step=step, loss=current_loss)
+                loss_recorder.add(epoch=epoch, step=step, loss=current_loss, global_step=self.global_step)
                 avr_loss: float = loss_recorder.moving_average
                 logs = {"avr_loss": avr_loss}  # , "lr": lr_scheduler.get_last_lr()[0]}
                 progress_bar.set_postfix(**logs)
