@@ -18,6 +18,18 @@ Both these nodes and the underlaying implementation by kohya is work in progress
 
   `python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-FluxTrainer\requirements.txt`
 
+Example workflow for LoRA training can be found in the examples folder, it utilizes additional nodes from:
+
+https://github.com/kijai/ComfyUI-KJNodes
+
+And some (optional) debugging nodes from:
+
+https://github.com/rgthree/rgthree-comfy
+
+For LoRA training the models need to be the normal fp8 or fp16 versions, also make sure the VAE is the non-diffusers version.
+
+For full model training the fp16 version of the main model needs to be used.
+
 ## Why train in ComfyUI?
 - Familiar UI (obviously only if you are a Comfy user already)
 - You can use same models you use for inference
