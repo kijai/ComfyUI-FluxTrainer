@@ -21,6 +21,8 @@ init_ipex()
 
 from .library import train_util
 from .train_network import setup_parser as train_network_setup_parser
+import matplotlib
+matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import io
 from PIL import Image
