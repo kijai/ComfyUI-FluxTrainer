@@ -103,7 +103,7 @@ class TrainDatasetAdd:
             "height": ("INT",{"min": 64, "default": 1024, "tooltip": "image height when bucketing is not used, also the default validation sampling height"}),
             "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more. "}),
             "dataset_path": ("STRING",{"multiline": True, "default": "", "tooltip": "path to dataset, root is ComfyUI folder"}),
-            "class_tokens": ("STRING",{"multiline": True, "default": "", "tooltip": "aka trigger word, if specified, will be added to the end of each caption, if no captions will be used on it's own"}),
+            "class_tokens": ("STRING",{"multiline": True, "default": "", "tooltip": "aka trigger word, if specified, will be added to the end of each caption, if no captions exist, will be used on it's own"}),
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
             "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "bucket reso is defined by image size automatically"}),
             "num_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
@@ -465,10 +465,11 @@ class InitFluxTraining:
             "seed": 42,
             "gradient_checkpointing": True,
             "dataset_config": dataset_toml,
-            "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
+            "output_name": f"{output_name}_{save_dtype}",
             "network_module": "networks.lora_flux",
             "width" : 1024,
             "height" : 1024,
+            "mem_eff_save": True,
 
         }
         attention_settings = {
@@ -659,6 +660,44 @@ class FluxTrainSave:
         
             
         return (network_trainer, lora_path, global_step)
+
+class FluxTrainSaveModel:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "network_trainer": ("NETWORKTRAINER",),
+            "copy_to_comfy_model_folder": ("BOOLEAN", {"default": False, "tooltip": "copy the lora model to the comfy lora folder"}),
+             },
+        }
+
+    RETURN_TYPES = ("NETWORKTRAINER", "STRING", "INT",)
+    RETURN_NAMES = ("network_trainer","model_path", "steps",)
+    FUNCTION = "save"
+    CATEGORY = "FluxTrainer"
+
+    def save(self, network_trainer, copy_to_comfy_model_folder):
+        import shutil
+        with torch.inference_mode(False):
+            trainer = network_trainer["network_trainer"]
+            global_step = trainer.global_step
+            
+            ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, global_step)
+            flux_train_utils.save_flux_model_on_epoch_end_or_stepwise(
+                trainer.args, 
+                False,
+                trainer.accelerator,
+                trainer.save_dtype,
+                trainer.current_epoch.value,
+                trainer.num_train_epochs,
+                global_step,
+                trainer.accelerator.unwrap_model(trainer.unet)
+                )
+
+            model_path = os.path.join(trainer.args.output_dir, ckpt_name)
+            if copy_to_comfy_model_folder:
+                shutil.copy(model_path, os.path.join(folder_paths.models_dir, "diffusion_models", "flux_trainer", ckpt_name))
+        
+        return (network_trainer, model_path, global_step)
     
 class FluxTrainEnd:
     @classmethod
@@ -760,10 +799,11 @@ class FluxTrainValidate:
             validation_settings
         )
 
-        if not network_trainer.args.split_mode:
-            image_tensors = flux_train_utils.sample_images(*params)
-        else:
+        split_mode = getattr(network_trainer.args, 'split_mode', False)
+        if split_mode:
             image_tensors = network_trainer.sample_images_split_mode(*params)
+        else:
+            image_tensors = flux_train_utils.sample_images(*params)
 
         trainer = {
             "network_trainer": network_trainer,
@@ -1213,7 +1253,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxKohyaInferenceSampler": FluxKohyaInferenceSampler,
     "UploadToHuggingFace": UploadToHuggingFace,
     "OptimizerConfig": OptimizerConfig,
-    "OptimizerConfigAdafactor": OptimizerConfigAdafactor
+    "OptimizerConfigAdafactor": OptimizerConfigAdafactor,
+    "FluxTrainSaveModel": FluxTrainSaveModel
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1226,9 +1267,11 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainValidate": "Flux Train Validate",
     "FluxTrainValidationSettings": "Flux Train Validation Settings",
     "FluxTrainEnd": "Flux Train End",
-    "FluxTrainSave": "Flux Train Save",
+    "FluxTrainSave": "Flux Train Save LoRA",
     "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler",
     "UploadToHuggingFace": "Upload To HuggingFace",
     "OptimizerConfig": "Optimizer Config",
-    "OptimizerConfigAdafactor": "Optimizer Config Adafactor"
+    "OptimizerConfigAdafactor": "Optimizer Config Adafactor",
+    "FluxTrainSaveModel": "Flux Train Save Model"
+
 }

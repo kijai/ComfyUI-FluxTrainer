@@ -651,6 +651,12 @@ class FluxTrainer:
         self.num_train_epochs = num_train_epochs
         self.current_epoch = current_epoch
         self.args = args
+        self.accelerator = accelerator
+        self.unet = flux
+        self.vae = ae
+        self.text_encoder = [clip_l, t5xxl]
+        self.loss_recorder = loss_recorder
+        self.save_dtype = save_dtype
             
         def training_loop(break_at_steps, epoch):
             global optimizer_hooked_count
