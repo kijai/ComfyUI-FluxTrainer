@@ -455,9 +455,9 @@ class FluxTrainer:
 
         if args.fused_backward_pass:
             # use fused optimizer for backward pass: other optimizers will be supported in the future
-            import library.adafactor_fused
+            from .library import adafactor_fused
 
-            library.adafactor_fused.patch_adafactor_fused(optimizer)
+            adafactor_fused.patch_adafactor_fused(optimizer)
             double_blocks_to_swap = args.double_blocks_to_swap
             single_blocks_to_swap = args.single_blocks_to_swap
             num_double_blocks = len(flux.double_blocks)

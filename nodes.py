@@ -381,7 +381,7 @@ class InitFluxTraining:
             "sigmoid_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1, "tooltip": "Scale factor for sigmoid timestep sampling (only used when timestep-sampling is sigmoid"}),
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
             "cpu_offload_checkpointing": ("BOOLEAN", {"default": True, "tooltip": "offload the gradient checkpointing to CPU. This reduces VRAM usage for about 2GB"}),
-            "blockwise_fused_optimizers": ("BOOLEAN", {"default": True, "tooltip": "enables the fusing of the optimizer for each block"}),
+            "optimizer_fusing": (['fused_backward_pass', 'blockwise_fused_optimizers'], {"tooltip": "reduces memory use"}),
             "single_blocks_to_swap": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "number of single blocks to swap. The default is 0. This option must be combined with blockwise_fused_optimizers"}),
             "double_blocks_to_swap": ("INT", {"default": 6, "min": 0, "max": 100, "step": 1, "tooltip": "number of double blocks to swap. This option must be combined with blockwise_fused_optimizers"}),
             "guidance_scale": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale"}),
@@ -404,7 +404,7 @@ class InitFluxTraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, optimizer_settings, dataset, sample_prompts, output_name, 
-                      attention_mode, gradient_dtype, save_dtype, additional_args=None, **kwargs,):
+                      attention_mode, gradient_dtype, save_dtype, optimizer_fusing, additional_args=None, **kwargs,):
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -473,6 +473,12 @@ class InitFluxTraining:
             "mem_eff_save": True,
 
         }
+        optimizer_fusing_settings = {
+            "fused_backward_pass": {"fused_backward_pass": True, "blockwise_fused_optimizers": False},
+            "blockwise_fused_optimizers": {"fused_backward_pass": False, "blockwise_fused_optimizers": True}
+        }
+        config_dict.update(optimizer_fusing_settings.get(optimizer_fusing, {}))
+        
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
             "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
