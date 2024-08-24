@@ -593,8 +593,8 @@ class FluxTrainLoop:
              },
         }
 
-    RETURN_TYPES = ("NETWORKTRAINER",)
-    RETURN_NAMES = ("network_trainer",)
+    RETURN_TYPES = ("NETWORKTRAINER", "INT",)
+    RETURN_NAMES = ("network_trainer", "steps",)
     FUNCTION = "train"
     CATEGORY = "FluxTrainer"
 
@@ -621,7 +621,7 @@ class FluxTrainLoop:
                 "network_trainer": network_trainer,
                 "training_loop": training_loop,
             }
-        return (trainer, )
+        return (trainer, network_trainer.global_step)
 
 class FluxTrainSave:
     @classmethod
