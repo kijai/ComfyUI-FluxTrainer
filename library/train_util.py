@@ -1775,7 +1775,7 @@ class DreamBoothDataset(BaseDataset):
                         else:
                             final_caption = cap_for_img
                             if subset.class_tokens:
-                                final_caption += f" {subset.class_tokens}"  # Concatenate class token to the caption
+                                final_caption = f"{subset.class_tokens} {final_caption}"  # Prepend class token to the caption
 
                         captions.append(final_caption)
 
