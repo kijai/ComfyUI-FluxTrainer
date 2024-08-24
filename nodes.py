@@ -156,7 +156,7 @@ class OptimizerConfig:
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
             "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
             "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
-            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "tooltip": "min snr gamma"}),
+            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
            },
         }
 
@@ -182,6 +182,7 @@ class OptimizerConfigAdafactor:
             "scale_parameter": ("BOOLEAN",{"default": False, "tooltip": "scale parameter"}),
             "warmup_init": ("BOOLEAN",{"default": False, "tooltip": "warmup init"}),
             "clip_threshold": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "clip threshold"}),
+            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
            },
         }
 
@@ -190,7 +191,7 @@ class OptimizerConfigAdafactor:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, relative_step, scale_parameter, warmup_init, clip_threshold, **kwargs):
+    def create_config(self, relative_step, scale_parameter, warmup_init, clip_threshold, min_snr_gamma, **kwargs):
         kwargs["optimizer_type"] = "adafactor"
         kwargs["optimizer_args"] = [
                 f"relative_step={relative_step}",
@@ -198,6 +199,7 @@ class OptimizerConfigAdafactor:
                 f"warmup_init={warmup_init}",
                 f"clip_threshold={clip_threshold}"
             ]
+        kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         return (kwargs,)    
 
 class InitFluxLoRATraining:
