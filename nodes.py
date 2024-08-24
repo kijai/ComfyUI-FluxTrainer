@@ -668,6 +668,7 @@ class FluxTrainSaveModel:
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
             "copy_to_comfy_model_folder": ("BOOLEAN", {"default": False, "tooltip": "copy the lora model to the comfy lora folder"}),
+            "end_training": ("BOOLEAN", {"default": False, "tooltip": "end the training"}),
              },
         }
 
@@ -676,7 +677,7 @@ class FluxTrainSaveModel:
     FUNCTION = "save"
     CATEGORY = "FluxTrainer"
 
-    def save(self, network_trainer, copy_to_comfy_model_folder):
+    def save(self, network_trainer, copy_to_comfy_model_folder, end_training):
         import shutil
         with torch.inference_mode(False):
             trainer = network_trainer["network_trainer"]
@@ -697,6 +698,9 @@ class FluxTrainSaveModel:
             model_path = os.path.join(trainer.args.output_dir, ckpt_name)
             if copy_to_comfy_model_folder:
                 shutil.copy(model_path, os.path.join(folder_paths.models_dir, "diffusion_models", "flux_trainer", ckpt_name))
+                model_path = os.path.join(folder_paths.models_dir, "diffusion_models", "flux_trainer", ckpt_name)
+            if end_training:
+                trainer.accelerator.end_training()
         
         return (network_trainer, model_path, global_step)
     
@@ -1272,6 +1276,7 @@ class ExtractFluxLoRA:
             save_to = os.path.join(output_path, f"{finetuned_model.replace('.safetensors', '')}_extracted_lora_rank_{dim}-{save_dtype}.safetensors"),
             dim = dim,
             device = load_device,
+            store_device = store_device,
             save_precision = save_dtype,
             clamp_quantile = clamp_quantile,
             no_metadata = not metadata,
@@ -1309,7 +1314,7 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "VisualizeLoss": "Visualize Loss",
     "FluxTrainValidate": "Flux Train Validate",
     "FluxTrainValidationSettings": "Flux Train Validation Settings",
-    "FluxTrainEnd": "Flux Train End",
+    "FluxTrainEnd": "Flux LoRA Train End",
     "FluxTrainSave": "Flux Train Save LoRA",
     "FluxKohyaInferenceSampler": "Flux Kohya Inference Sampler",
     "UploadToHuggingFace": "Upload To HuggingFace",
