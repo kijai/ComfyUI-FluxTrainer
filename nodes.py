@@ -101,14 +101,16 @@ class TrainDatasetAdd:
     def INPUT_TYPES(s):
         return {"required": {
             "dataset_config": ("JSON",),
-            "width": ("INT",{"min": 64, "default": 1024, "tooltip": "image width when bucketing is not used, also the default validation sampling width"}),
-            "height": ("INT",{"min": 64, "default": 1024, "tooltip": "image height when bucketing is not used, also the default validation sampling height"}),
-            "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more. "}),
+            "width": ("INT",{"min": 64, "default": 1024, "tooltip": "base resolution width"}),
+            "height": ("INT",{"min": 64, "default": 1024, "tooltip": "base resolution height"}),
+            "batch_size": ("INT",{"min": 1, "default": 2, "tooltip": "Higher batch size uses more memory and generalizes the training more"}),
             "dataset_path": ("STRING",{"multiline": True, "default": "", "tooltip": "path to dataset, root is ComfyUI folder"}),
             "class_tokens": ("STRING",{"multiline": True, "default": "", "tooltip": "aka trigger word, if specified, will be added to the start of each caption, if no captions exist, will be used on it's own"}),
             "enable_bucket": ("BOOLEAN",{"default": True, "tooltip": "enable buckets for multi aspect ratio training"}),
-            "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "bucket reso is defined by image size automatically"}),
+            "bucket_no_upscale": ("BOOLEAN",{"default": False, "tooltip": "don't allow upscaling when bucketing"}),
             "num_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
+            "min_bucket_reso": ("INT", {"default": 256, "min": 64, "max": 4096, "step": 8, "tooltip": "min bucket resolution"}),
+            "max_bucket_reso": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 8, "tooltip": "max bucket resolution"}),
             },
         }
 
@@ -118,7 +120,7 @@ class TrainDatasetAdd:
     CATEGORY = "FluxTrainer"
 
     def create_config(self, dataset_config, dataset_path, class_tokens, width, height, batch_size, num_repeats, enable_bucket,  
-                  bucket_no_upscale):
+                  bucket_no_upscale, min_bucket_reso, max_bucket_reso):
         
         dataset = {
            "datasets": [
@@ -127,6 +129,8 @@ class TrainDatasetAdd:
                    "batch_size": batch_size,
                    "enable_bucket": enable_bucket,
                    "bucket_no_upscale": bucket_no_upscale,
+                   "min_bucket_reso": min_bucket_reso,
+                   "max_bucket_reso": max_bucket_reso,
                   
                    "subsets": [
                        {
@@ -228,11 +232,11 @@ class InitFluxLoRATraining:
             "logit_mean": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "mean to use when using the logit_normal weighting scheme"}),
             "logit_std": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "std to use when using the logit_normal weighting scheme"}),
             "mode_scale": ("FLOAT", {"default": 1.29, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "Scale of mode weighting scheme. Only effective when using the mode as the weighting_scheme"}),
-            "timestep_sampling": (["sigmoid", "uniform", "sigma"], {"tooltip": "method to sample timestep"}),
+            "timestep_sampling": (["sigmoid", "uniform", "sigma", "shift"], {"tooltip": "Method to sample timesteps: sigma-based, uniform random, sigmoid of random normal and shift of sigmoid (recommend value of 3.1582 for discrete_flow_shift)"}),
             "sigmoid_scale": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.1, "tooltip": "Scale factor for sigmoid timestep sampling (only used when timestep-sampling is sigmoid"}),
             "model_prediction_type": (["raw", "additive", "sigma_scaled"], {"tooltip": "How to interpret and process the model prediction: raw (use as is), additive (add to noisy input), sigma_scaled (apply sigma scaling)."}),
             "guidance_scale": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale, for Flux training should be 1.0"}),
-            "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
+            "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.0001, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
             "fp8_base": ("BOOLEAN", {"default": True, "tooltip": "use fp8 for base model"}),
             "gradient_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "the actual dtype training uses"}),
@@ -269,7 +273,7 @@ class InitFluxLoRATraining:
             args, _ = parser.parse_known_args(args=[additional_args])
         else:
             args, _ = parser.parse_known_args()
-        print(args)
+        #print(args)
 
         if kwargs.get("cache_latents") == "memory":
             kwargs["cache_latents"] = True
@@ -318,8 +322,6 @@ class InitFluxLoRATraining:
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
-            "width" : 1024,
-            "height" : 1024,
             "text_encoder_lr": 0,
             "network_train_unet_only": True,
             "t5xxl_max_token_length": 512,
@@ -387,7 +389,7 @@ class InitFluxTraining:
             "single_blocks_to_swap": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "number of single blocks to swap. The default is 0. This option must be combined with blockwise_fused_optimizers"}),
             "double_blocks_to_swap": ("INT", {"default": 6, "min": 0, "max": 100, "step": 1, "tooltip": "number of double blocks to swap. This option must be combined with blockwise_fused_optimizers"}),
             "guidance_scale": ("FLOAT", {"default": 1.0, "min": 1.0, "max": 32.0, "step": 0.01, "tooltip": "guidance scale"}),
-            "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.01, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
+            "discrete_flow_shift": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 10.0, "step": 0.0001, "tooltip": "for the Euler Discrete Scheduler, default is 3.0"}),
             "highvram": ("BOOLEAN", {"default": False, "tooltip": "memory mode"}),
             "fp8_base": ("BOOLEAN", {"default": False, "tooltip": "use fp8 for base model"}),
             "gradient_dtype": (["fp32", "fp16", "bf16"], {"default": "bf16", "tooltip": "to use the full fp16/bf16 training"}),
@@ -470,8 +472,6 @@ class InitFluxTraining:
             "gradient_checkpointing": True,
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_{save_dtype}",
-            "width" : 1024,
-            "height" : 1024,
             "mem_eff_save": True,
 
         }
@@ -765,6 +765,9 @@ class FluxTrainValidationSettings:
             "height": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "image height"}),
             "guidance_scale": ("FLOAT", {"default": 3.5, "min": 1.0, "max": 32.0, "step": 0.05, "tooltip": "guidance scale"}),
             "seed": ("INT", {"default": 42,"min": 0, "max": 0xffffffffffffffff, "step": 1}),
+            "shift": ("BOOLEAN", {"default": True, "tooltip": "shift the schedule to favor high timesteps for higher signal images"}),
+            "base_shift": ("FLOAT", {"default": 0.5, "min": 0.0, "max": 10.0, "step": 0.01}),
+            "max_shift": ("FLOAT", {"default": 1.15, "min": 0.0, "max": 10.0, "step": 0.01}),
             },
         }
 

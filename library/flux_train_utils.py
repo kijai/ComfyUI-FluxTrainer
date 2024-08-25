@@ -131,12 +131,18 @@ def sample_image_inference(
         height = validation_settings["height"]
         scale = validation_settings["guidance_scale"]
         seed = validation_settings["seed"]
+        base_shift = validation_settings["base_shift"]
+        max_shift = validation_settings["max_shift"]
+        shift = validation_settings["shift"]
     else:
         sample_steps = prompt_dict.get("sample_steps", 20)
         width = prompt_dict.get("width", 512)
         height = prompt_dict.get("height", 512)
         scale = prompt_dict.get("scale", 3.5)
         seed = prompt_dict.get("seed")
+        base_shift = 0.5
+        max_shift = 1.15
+        shift = True
     # controlnet_image = prompt_dict.get("controlnet_image")
     prompt: str = prompt_dict.get("prompt", "")
     # sampler_name: str = prompt_dict.get("sample_sampler", args.sample_sampler)
@@ -193,7 +199,7 @@ def sample_image_inference(
         dtype=weight_dtype,
         generator=torch.Generator(device=accelerator.device).manual_seed(seed) if seed is not None else None,
     )
-    timesteps = get_schedule(sample_steps, noise.shape[1], shift=True)  # FLUX.1 dev -> shift=True
+    timesteps = get_schedule(sample_steps, noise.shape[1], base_shift=base_shift, max_shift=max_shift, shift=shift)  # FLUX.1 dev -> shift=True
     #print("TIMESTEPS: ", timesteps)
     img_ids = flux_utils.prepare_img_ids(1, packed_latent_height, packed_latent_width).to(accelerator.device, weight_dtype)
     t5_attn_mask = t5_attn_mask.to(accelerator.device) if args.apply_t5_attn_mask else None
@@ -367,6 +373,15 @@ def get_noisy_model_input_and_timesteps(
             t = torch.rand((bsz,), device=device)
         timesteps = t * 1000.0
         t = t.view(-1, 1, 1, 1)
+        noisy_model_input = (1 - t) * latents + t * noise
+    elif args.timestep_sampling == "shift":
+        shift = args.discrete_flow_shift
+        logits_norm = torch.randn(bsz, device=device)
+        timesteps = logits_norm.sigmoid()
+        timesteps = (timesteps * shift) / (1 + (shift - 1) * timesteps)
+
+        t = timesteps.view(-1, 1, 1, 1)
+        timesteps = timesteps * 1000.0
         noisy_model_input = (1 - t) * latents + t * noise
     else:
         # Sample a random timestep for each image
