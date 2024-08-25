@@ -339,8 +339,8 @@ class InitFluxLoRATraining:
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
 
         split_mode_settings = {
-            True: {"split_mode": True, "train_blocks": "single"},
-            False: {"split_mode": False, "train_blocks": "all"}
+            True: {"split_mode": True, "network_args": ["train_blocks=single"]},
+            False: {"split_mode": False, "network_args": ["train_blocks=all"]}
         }
         config_dict.update(split_mode_settings.get(split_mode, {}))
 
