@@ -255,7 +255,7 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, additional_args=None,**kwargs,):
+                      gradient_dtype, save_dtype, split_mode, additional_args=None,**kwargs,):
         mm.soft_empty_cache()
 
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -337,6 +337,12 @@ class InitFluxLoRATraining:
             "bf16": {"full_bf16": True, "full_fp16": False, "mixed_precision": "bf16"}
         }
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
+
+        split_mode_settings = {
+            True: {"split_mode": True, "train_blocks": "single"},
+            False: {"split_mode": False, "train_blocks": "all"}
+        }
+        config_dict.update(split_mode_settings.get(split_mode, {}))
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
