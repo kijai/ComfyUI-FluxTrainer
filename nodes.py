@@ -90,13 +90,16 @@ class TrainDatasetGeneralConfig:
                 "caption_dropout_rate": caption_dropout_rate,
                 "color_aug": color_aug,
                 "flip_aug": flip_aug,
-                "alpha_mask": alpha_mask
            },
            "datasets": []
         }
         dataset_json = json.dumps(dataset, indent=2)
-        print(dataset_json)
-        return (dataset_json,)
+        #print(dataset_json)
+        dataset_config = {
+            "datasets": dataset_json,
+            "alpha_mask": alpha_mask
+        }
+        return (dataset_config,)
 
 class TrainDatasetAdd:
     @classmethod
@@ -146,12 +149,13 @@ class TrainDatasetAdd:
            ]
         }
         
-        updated_dataset = json.loads(dataset_config)
+        updated_dataset = json.loads(dataset_config["datasets"])
         updated_dataset["datasets"].extend(dataset["datasets"])
         
         updated_dataset_json = json.dumps(updated_dataset, indent=2)
-        print(updated_dataset_json)
-        return (updated_dataset_json,)
+        #print(updated_dataset_json)
+        dataset_config["datasets"] = updated_dataset_json
+        return (dataset_config,)
 
 class OptimizerConfig:
     @classmethod
@@ -302,7 +306,7 @@ class InitFluxLoRATraining:
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, **kwargs,):
         mm.soft_empty_cache()
-
+        
         output_dir = os.path.abspath(kwargs.get("output_dir"))
         os.makedirs(output_dir, exist_ok=True)
     
@@ -312,7 +316,9 @@ class InitFluxLoRATraining:
         if free <= required_free_space:
             raise ValueError(f"Insufficient disk space. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
         
-        dataset_toml = toml.dumps(json.loads(dataset))
+        dataset_config = dataset["datasets"]
+        dataset_toml = toml.dumps(json.loads(dataset_config))
+
         parser = train_network_setup_parser()
         if additional_args is not None:
             args, _ = parser.parse_known_args(args=[additional_args])
@@ -370,6 +376,7 @@ class InitFluxLoRATraining:
             "text_encoder_lr": 0,
             "network_train_unet_only": True,
             "t5xxl_max_token_length": 512,
+            "alpha_mask": dataset["alpha_mask"],
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
