@@ -222,6 +222,8 @@ class OptimizerConfigProdigy:
             "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
             "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
             "weight_decay": ("FLOAT",{"default": 0.0, "tooltip": "weight decay (L2 penalty)"}),
+            "decouple": ("BOOLEAN",{"default": True, "tooltip": "use AdamW style weight decay"}),
+            "use_bias_correction": ("BOOLEAN",{"default": False, "tooltip": "turn on Adam's bias correction"}),
             "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
             "extra_optimizer_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional optimizer args"}),
            },
@@ -232,11 +234,13 @@ class OptimizerConfigProdigy:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, weight_decay, min_snr_gamma, extra_optimizer_args, **kwargs):
+    def create_config(self, weight_decay, decouple, min_snr_gamma, use_bias_correction, extra_optimizer_args, **kwargs):
         kwargs["optimizer_type"] = "prodigy"
         extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split(',') if arg.strip()]
         node_args = [
                 f"weight_decay={weight_decay}",
+                f"decouple={decouple}",
+                f"use_bias_correction={use_bias_correction}"
             ]
         kwargs["optimizer_args"] = node_args + extra_args
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
