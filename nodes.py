@@ -71,6 +71,7 @@ class TrainDatasetGeneralConfig:
             "flip_aug": ("BOOLEAN",{"default": False, "tooltip": "enable horizontal flip augmentation"}),
             "shuffle_caption": ("BOOLEAN",{"default": False, "tooltip": "shuffle caption"}),
             "caption_dropout_rate": ("FLOAT",{"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "tag dropout rate"}),
+            "alpha_mask": ("BOOLEAN",{"default": False, "tooltip": "use alpha channel as mask for training"}),
             },
         }
 
@@ -79,7 +80,7 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug):
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask):
         
         dataset = {
            "general": {
@@ -89,6 +90,7 @@ class TrainDatasetGeneralConfig:
                 "caption_dropout_rate": caption_dropout_rate,
                 "color_aug": color_aug,
                 "flip_aug": flip_aug,
+                "alpha_mask": alpha_mask
            },
            "datasets": []
         }
@@ -111,7 +113,7 @@ class TrainDatasetAdd:
             "num_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
             "min_bucket_reso": ("INT", {"default": 256, "min": 64, "max": 4096, "step": 8, "tooltip": "min bucket resolution"}),
             "max_bucket_reso": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 8, "tooltip": "max bucket resolution"}),
-            "alpha_mask": ("BOOLEAN",{"default": False, "tooltip": "use alpha channel as mask for training"}),
+  
             },
         }
 
@@ -121,7 +123,7 @@ class TrainDatasetAdd:
     CATEGORY = "FluxTrainer"
 
     def create_config(self, dataset_config, dataset_path, class_tokens, width, height, batch_size, num_repeats, enable_bucket,  
-                  bucket_no_upscale, min_bucket_reso, max_bucket_reso, alpha_mask):
+                  bucket_no_upscale, min_bucket_reso, max_bucket_reso):
         
         dataset = {
            "datasets": [
@@ -132,7 +134,6 @@ class TrainDatasetAdd:
                    "bucket_no_upscale": bucket_no_upscale,
                    "min_bucket_reso": min_bucket_reso,
                    "max_bucket_reso": max_bucket_reso,
-                   "alpha_mask": alpha_mask,
                   
                    "subsets": [
                        {
