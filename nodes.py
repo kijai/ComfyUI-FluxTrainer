@@ -161,6 +161,7 @@ class OptimizerConfig:
             "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
             "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
             "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
+            "extra_optimizer_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional optimizer args"}),
            },
         }
 
@@ -169,8 +170,9 @@ class OptimizerConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, min_snr_gamma, **kwargs):
+    def create_config(self, min_snr_gamma, extra_optimizer_args, **kwargs):
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
+        kwargs["optimizer_args"] = [arg.strip() for arg in extra_optimizer_args.strip().split(',') if arg.strip()]
         return (kwargs,)
 
 class OptimizerConfigAdafactor:
@@ -187,6 +189,7 @@ class OptimizerConfigAdafactor:
             "warmup_init": ("BOOLEAN",{"default": False, "tooltip": "warmup init"}),
             "clip_threshold": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "clip threshold"}),
             "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
+            "extra_optimizer_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional optimizer args"}),
            },
         }
 
@@ -195,15 +198,49 @@ class OptimizerConfigAdafactor:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, relative_step, scale_parameter, warmup_init, clip_threshold, min_snr_gamma, **kwargs):
+    def create_config(self, relative_step, scale_parameter, warmup_init, clip_threshold, min_snr_gamma, extra_optimizer_args, **kwargs):
         kwargs["optimizer_type"] = "adafactor"
-        kwargs["optimizer_args"] = [
+        extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split(',') if arg.strip()]
+        node_args = [
                 f"relative_step={relative_step}",
                 f"scale_parameter={scale_parameter}",
                 f"warmup_init={warmup_init}",
                 f"clip_threshold={clip_threshold}"
             ]
+        kwargs["optimizer_args"] = node_args + extra_args
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
+        
+        return (kwargs,)
+
+class OptimizerConfigProdigy:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "max_grad_norm": ("FLOAT",{"default": 0.0, "min": 0.0, "tooltip": "gradient clipping"}),
+            "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup", "adafactor"], {"default": "constant", "tooltip": "learning rate scheduler"}),
+            "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
+            "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
+            "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
+            "weight_decay": ("FLOAT",{"default": 0.0, "tooltip": "weight decay (L2 penalty)"}),
+            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
+            "extra_optimizer_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional optimizer args"}),
+           },
+        }
+
+    RETURN_TYPES = ("ARGS",)
+    RETURN_NAMES = ("optimizer_settings",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, weight_decay, min_snr_gamma, extra_optimizer_args, **kwargs):
+        kwargs["optimizer_type"] = "prodigy"
+        extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split(',') if arg.strip()]
+        node_args = [
+                f"weight_decay={weight_decay}",
+            ]
+        kwargs["optimizer_args"] = node_args + extra_args
+        kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
+        
         return (kwargs,)    
 
 class InitFluxLoRATraining:
@@ -1319,7 +1356,8 @@ NODE_CLASS_MAPPINGS = {
     "OptimizerConfig": OptimizerConfig,
     "OptimizerConfigAdafactor": OptimizerConfigAdafactor,
     "FluxTrainSaveModel": FluxTrainSaveModel,
-    "ExtractFluxLoRA": ExtractFluxLoRA
+    "ExtractFluxLoRA": ExtractFluxLoRA,
+    "OptimizerConfigProdigy": OptimizerConfigProdigy
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1338,5 +1376,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OptimizerConfig": "Optimizer Config",
     "OptimizerConfigAdafactor": "Optimizer Config Adafactor",
     "FluxTrainSaveModel": "Flux Train Save Model",
-    "ExtractFluxLoRA": "Extract Flux LoRA"
+    "ExtractFluxLoRA": "Extract Flux LoRA",
+    "OptimizerConfigProdigy": "Optimizer Config Prodigy"
 }
