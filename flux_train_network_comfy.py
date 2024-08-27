@@ -226,10 +226,11 @@ class FluxNetworkTrainer(NetworkTrainer):
 
         wrapper = FluxUpperLowerWrapper(self.flux_upper, flux, accelerator.device)
         clean_memory_on_device(accelerator.device)
-        flux_train_utils.sample_images(
+        image_tensors = flux_train_utils.sample_images(
             accelerator, args, epoch, global_step, wrapper, ae, text_encoder, sample_prompts_te_outputs, validation_settings
         )
         clean_memory_on_device(accelerator.device)
+        return image_tensors
 
     def get_noise_scheduler(self, args: argparse.Namespace, device: torch.device) -> Any:
         noise_scheduler = sd3_train_utils.FlowMatchEulerDiscreteScheduler(num_train_timesteps=1000, shift=args.discrete_flow_shift)
