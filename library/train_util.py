@@ -1711,8 +1711,9 @@ class DreamBoothDataset(BaseDataset):
 
         def load_dreambooth_dir(subset: DreamBoothSubset):
             if not os.path.isdir(subset.image_dir):
-                logger.warning(f"not directory: {subset.image_dir}")
-                return [], []
+                raise ValueError(f"{subset.image_dir} is not a directory")
+                #logger.warning(f"not directory: {subset.image_dir}")
+                #return [], []
 
             info_cache_file = os.path.join(subset.image_dir, self.IMAGE_INFO_CACHE_FILE)
             use_cached_info_for_subset = subset.cache_info
