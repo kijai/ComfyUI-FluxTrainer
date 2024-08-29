@@ -1711,7 +1711,7 @@ class DreamBoothDataset(BaseDataset):
 
         def load_dreambooth_dir(subset: DreamBoothSubset):
             if not os.path.isdir(subset.image_dir):
-                raise ValueError(f"{subset.image_dir} is not a directory")
+                raise ValueError(f"'{subset.image_dir}' is not a directory")
                 #logger.warning(f"not directory: {subset.image_dir}")
                 #return [], []
 
