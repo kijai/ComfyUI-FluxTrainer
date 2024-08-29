@@ -378,7 +378,7 @@ class InitFluxLoRATraining:
             "t5xxl_max_token_length": 512,
             "alpha_mask": dataset["alpha_mask"],
             "network_train_unet_only": True if train_clip_l == 'disabled' else False,
-            "fp8_base_unet": True if train_clip_l=='use_fp8' else False,
+            "fp8_base_unet": True if train_clip_l!='use_fp8' else False,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
