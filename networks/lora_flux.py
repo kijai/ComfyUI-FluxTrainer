@@ -322,7 +322,7 @@ class LoRANetwork(torch.nn.Module):
     # FLUX_TARGET_REPLACE_MODULE = ["DoubleStreamBlock", "SingleStreamBlock"]
     FLUX_TARGET_REPLACE_MODULE_DOUBLE = ["DoubleStreamBlock"]
     FLUX_TARGET_REPLACE_MODULE_SINGLE = ["SingleStreamBlock"]
-    TEXT_ENCODER_TARGET_REPLACE_MODULE = ["CLIPAttention", "CLIPMLP"]
+    TEXT_ENCODER_TARGET_REPLACE_MODULE = ["CLIPAttention", "CLIPSdpaAttention", "CLIPMLP"]
     LORA_PREFIX_FLUX = "lora_unet"  # make ComfyUI compatible
     LORA_PREFIX_TEXT_ENCODER_CLIP = "lora_te1"
     LORA_PREFIX_TEXT_ENCODER_T5 = "lora_te2"

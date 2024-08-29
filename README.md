@@ -18,6 +18,8 @@ Both these nodes and the underlaying implementation by kohya is work in progress
 
   `python_embeded\python.exe -m pip install -r ComfyUI\custom_nodes\ComfyUI-FluxTrainer\requirements.txt`
 
+In addition torch version 2.4.0 or higher is highly recommended.
+
 Example workflow for LoRA training can be found in the examples folder, it utilizes additional nodes from:
 
 https://github.com/kijai/ComfyUI-KJNodes

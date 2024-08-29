@@ -48,7 +48,8 @@ def sample_images(
 
     # unwrap unet and text_encoder(s)
     flux = accelerator.unwrap_model(flux)
-    text_encoders = [accelerator.unwrap_model(te) for te in text_encoders]
+    if text_encoders is not None:
+        text_encoders = [accelerator.unwrap_model(te) for te in text_encoders]
     # print([(te.parameters().__next__().device if te is not None else None) for te in text_encoders])
 
     prompts = []
@@ -113,7 +114,7 @@ def sample_image_inference(
     accelerator: Accelerator,
     args: argparse.Namespace,
     flux: flux_models.Flux,
-    text_encoders: List[CLIPTextModel],
+    text_encoders: Optional[List[CLIPTextModel]],
     ae: flux_models.AutoEncoder,
     save_dir,
     prompt_dict,
@@ -377,6 +378,7 @@ def get_noisy_model_input_and_timesteps(
     elif args.timestep_sampling == "shift":
         shift = args.discrete_flow_shift
         logits_norm = torch.randn(bsz, device=device)
+        logits_norm = logits_norm * args.sigmoid_scale # larger scale for more uniform sampling
         timesteps = logits_norm.sigmoid()
         timesteps = (timesteps * shift) / (1 + (shift - 1) * timesteps)
 

@@ -128,7 +128,14 @@ class NetworkTrainer:
         return None
 
     def get_models_for_text_encoding(self, args, accelerator, text_encoders):
+        """
+        Returns a list of models that will be used for text encoding. SDXL uses wrapped and unwrapped models.
+        """
         return text_encoders
+
+    # returns a list of bool values indicating whether each text encoder should be trained
+    def get_text_encoders_train_flags(self, args, text_encoders):
+        return [True] * len(text_encoders) if self.is_train_text_encoder(args) else [False] * len(text_encoders)
 
     def is_train_text_encoder(self, args):
         return not args.network_train_unet_only
@@ -136,11 +143,6 @@ class NetworkTrainer:
     def cache_text_encoder_outputs_if_needed(self, args, accelerator, unet, vae, text_encoders, dataset, weight_dtype):
         for t_enc in text_encoders:
             t_enc.to(accelerator.device, dtype=weight_dtype)
-
-    def get_text_cond(self, args, accelerator, batch, tokenizers, text_encoders, weight_dtype):
-        input_ids = batch["input_ids"].to(accelerator.device)
-        encoder_hidden_states = train_util.get_hidden_states(args, input_ids, tokenizers[0], text_encoders[0], weight_dtype)
-        return encoder_hidden_states
 
     def call_unet(self, args, accelerator, unet, noisy_latents, timesteps, text_conds, batch, weight_dtype):
         noise_pred = unet(noisy_latents, timesteps, text_conds[0]).sample
@@ -442,8 +444,10 @@ class NetworkTrainer:
 
         if args.gradient_checkpointing:
             unet.enable_gradient_checkpointing()
-            for t_enc in text_encoders:
-                t_enc.gradient_checkpointing_enable()
+            for t_enc, flag in zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders)):
+                if flag:
+                    if t_enc.supports_gradient_checkpointing:
+                        t_enc.gradient_checkpointing_enable()
             del t_enc
             network.enable_gradient_checkpointing()  # may have no effect
 
@@ -527,14 +531,17 @@ class NetworkTrainer:
 
         unet_weight_dtype = te_weight_dtype = weight_dtype
         # Experimental Feature: Put base model into fp8 to save vram
-        if args.fp8_base:
+        if args.fp8_base or args.fp8_base_unet:
             assert torch.__version__ >= "2.1.0", "fp8_base requires torch>=2.1.0"
             assert (
                 args.mixed_precision != "no"
             ), "fp8_base requires mixed precision='fp16' or 'bf16'"
-            accelerator.print("enable fp8 training.")
+            accelerator.print("enable fp8 training for U-Net.")
             unet_weight_dtype = torch.float8_e4m3fn
-            te_weight_dtype = torch.float8_e4m3fn
+
+            if not args.fp8_base_unet:
+                accelerator.print("enable fp8 training for Text Encoder.")
+            te_weight_dtype = weight_dtype if args.fp8_base_unet else torch.float8_e4m3fn
 
             # unet.to(accelerator.device)  # this makes faster `to(dtype)` below, but consumes 23 GB VRAM
             # unet.to(dtype=unet_weight_dtype)  # without moving to gpu, this takes a lot of time and main memory
@@ -551,19 +558,18 @@ class NetworkTrainer:
                 t_enc.to(dtype=te_weight_dtype)
                 if hasattr(t_enc, "text_model") and hasattr(t_enc.text_model, "embeddings"):
                     # nn.Embedding not support FP8
-                    t_enc.text_model.embeddings.to(
-                        dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
+                    t_enc.text_model.embeddings.to(dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
                 elif hasattr(t_enc, "encoder") and hasattr(t_enc.encoder, "embeddings"):
-                    t_enc.encoder.embeddings.to(
-                        dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
+                    t_enc.encoder.embeddings.to(dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
 
         # acceleratorがなんかよろしくやってくれるらしい / accelerator will do something good
         if args.deepspeed:
+            flags = self.get_text_encoders_train_flags(args, text_encoders)
             ds_model = deepspeed_utils.prepare_deepspeed_model(
                 args,
                 unet=unet if train_unet else None,
-                text_encoder1=text_encoders[0] if train_text_encoder else None,
-                text_encoder2=text_encoders[1] if train_text_encoder and len(text_encoders) > 1 else None,
+                text_encoder1=text_encoders[0] if flags[0] else None,
+                text_encoder2=(text_encoders[1] if flags[1] else None) if len(text_encoders) > 1 else None,
                 network=network,
             )
             ds_model, optimizer, train_dataloader, lr_scheduler = accelerator.prepare(
@@ -576,11 +582,14 @@ class NetworkTrainer:
             else:
                 unet.to(accelerator.device, dtype=unet_weight_dtype)  # move to device because unet is not prepared by accelerator
             if train_text_encoder:
+                text_encoders = [
+                    (accelerator.prepare(t_enc) if flag else t_enc)
+                    for t_enc, flag in zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders))
+                ]
                 if len(text_encoders) > 1:
-                    text_encoder = text_encoders = [accelerator.prepare(t_enc) for t_enc in text_encoders]
+                    text_encoder = text_encoders
                 else:
-                    text_encoder = accelerator.prepare(text_encoder)
-                    text_encoders = [text_encoder]
+                    text_encoder = text_encoders[0]
             else:
                 pass  # if text_encoder is not trained, no need to prepare. and device and dtype are already set
 
@@ -592,11 +601,11 @@ class NetworkTrainer:
         if args.gradient_checkpointing:
             # according to TI example in Diffusers, train is required
             unet.train()
-            for t_enc in text_encoders:
+            for t_enc, frag in zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders)):
                 t_enc.train()
 
                 # set top parameter requires_grad = True for gradient checkpointing works
-                if train_text_encoder:
+                if frag:
                     t_enc.text_model.embeddings.requires_grad_(True)
 
         else:
@@ -744,6 +753,7 @@ class NetworkTrainer:
             "ss_huber_schedule": args.huber_schedule,
             "ss_huber_c": args.huber_c,
             "ss_fp8_base": args.fp8_base,
+            "ss_fp8_base_unet": args.fp8_base_unet,
         }
 
         self.update_metadata(metadata, args)  # architecture specific metadata
@@ -1007,6 +1017,7 @@ class NetworkTrainer:
             for t_enc in text_encoders:
                 del t_enc
             text_encoders = []
+            text_encoder = None
 
         # For --sample_at_first
         #self.sample_images(accelerator, args, 0, global_step, accelerator.device, vae, tokenizers, text_encoder, unet)
@@ -1021,7 +1032,7 @@ class NetworkTrainer:
         # log device and dtype for each model
         logger.info(f"unet dtype: {unet_weight_dtype}, device: {unet.device}")
         for t_enc in text_encoders:
-            logger.info(f"text_encoder dtype: {te_weight_dtype}, device: {t_enc.device}")
+            logger.info(f"text_encoder dtype: {t_enc.dtype}, device: {t_enc.device}")
 
         clean_memory_on_device(accelerator.device)
 
@@ -1095,12 +1106,17 @@ class NetworkTrainer:
                     text_encoder_outputs_list = batch.get("text_encoder_outputs_list", None)
                     if text_encoder_outputs_list is not None:
                         text_encoder_conds = text_encoder_outputs_list  # List of text encoder outputs
-                    else:
+                    if (
+                        text_encoder_conds is None
+                        or len(text_encoder_conds) == 0
+                        or text_encoder_conds[0] is None
+                        or train_text_encoder
+                    ):
                         with torch.set_grad_enabled(train_text_encoder), accelerator.autocast():
                             # Get the text embedding for conditioning
                             if args.weighted_captions:
                                 # SD only
-                                text_encoder_conds = get_weighted_text_embeddings(
+                                encoded_text_encoder_conds = get_weighted_text_embeddings(
                                     tokenizers[0],
                                     text_encoder,
                                     batch["captions"],
@@ -1110,13 +1126,18 @@ class NetworkTrainer:
                                 )
                             else:
                                 input_ids = [ids.to(accelerator.device) for ids in batch["input_ids_list"]]
-                                text_encoder_conds = text_encoding_strategy.encode_tokens(
+                                encoded_text_encoder_conds = text_encoding_strategy.encode_tokens(
                                     tokenize_strategy,
                                     self.get_models_for_text_encoding(args, accelerator, text_encoders),
                                     input_ids,
                                 )
                                 if args.full_fp16:
-                                    text_encoder_conds = [c.to(weight_dtype) for c in text_encoder_conds]
+                                    encoded_text_encoder_conds = [c.to(weight_dtype) for c in encoded_text_encoder_conds]
+
+                        # if encoded_text_encoder_conds is not None, update cached text_encoder_conds
+                        for i in range(len(encoded_text_encoder_conds)):
+                            if encoded_text_encoder_conds[i] is not None:
+                                text_encoder_conds[i] = encoded_text_encoder_conds[i]
 
                     # sample noise, call unet, get target
                     noise_pred, target, timesteps, huber_c, weighting = self.get_noise_pred_and_target(
@@ -1338,6 +1359,12 @@ def setup_parser() -> argparse.ArgumentParser:
         default=None,
         help="initial step number including all epochs, 0 means first step (same as not specifying). overwrites initial_epoch."
         + " / 初期ステップ数、全エポックを含むステップ数、0で最初のステップ（未指定時と同じ）。initial_epochを上書きする",
+    )
+    parser.add_argument(
+        "--fp8_base_unet",
+        action="store_true",
+        help="use fp8 for U-Net (or DiT), Text Encoder is fp16 or bf16"
+        " / U-Net（またはDiT）にfp8を使用する。Text Encoderはfp16またはbf16",
     )
     # parser.add_argument("--loraplus_lr_ratio", default=None, type=float, help="LoRA+ learning rate ratio")
     # parser.add_argument("--loraplus_unet_lr_ratio", default=None, type=float, help="LoRA+ UNet learning rate ratio")
