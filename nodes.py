@@ -102,6 +102,8 @@ class TrainDatasetGeneralConfig:
         return (dataset_config,)
 
 class TrainDatasetAdd:
+    def __init__(self):
+        self.previous_dataset_signature = None
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -128,34 +130,50 @@ class TrainDatasetAdd:
     def create_config(self, dataset_config, dataset_path, class_tokens, width, height, batch_size, num_repeats, enable_bucket,  
                   bucket_no_upscale, min_bucket_reso, max_bucket_reso):
         
-        dataset = {
-           "datasets": [
-               {
-                   "resolution": (width, height),
-                   "batch_size": batch_size,
-                   "enable_bucket": enable_bucket,
-                   "bucket_no_upscale": bucket_no_upscale,
-                   "min_bucket_reso": min_bucket_reso,
-                   "max_bucket_reso": max_bucket_reso,
-                  
-                   "subsets": [
-                       {
-                           "image_dir": dataset_path,
-                           "class_tokens": class_tokens,
-                           "num_repeats": num_repeats
-                       }
-                   ]
-               }
-           ]
+        new_dataset = {
+            "resolution": (width, height),
+            "batch_size": batch_size,
+            "enable_bucket": enable_bucket,
+            "bucket_no_upscale": bucket_no_upscale,
+            "min_bucket_reso": min_bucket_reso,
+            "max_bucket_reso": max_bucket_reso,
+            "subsets": [
+                {
+                    "image_dir": dataset_path,
+                    "class_tokens": class_tokens,
+                    "num_repeats": num_repeats
+                }
+            ]
         }
-        
-        updated_dataset = json.loads(dataset_config["datasets"])
-        updated_dataset["datasets"].extend(dataset["datasets"])
-        
-        updated_dataset_json = json.dumps(updated_dataset, indent=2)
-        #print(updated_dataset_json)
+
+        # Generate a signature for the new dataset
+        new_dataset_signature = self.generate_signature(new_dataset)
+
+        # Load the existing datasets
+        existing_datasets = json.loads(dataset_config["datasets"])
+
+        # Remove the previously added dataset if it exists
+        if self.previous_dataset_signature:
+            existing_datasets["datasets"] = [
+                ds for ds in existing_datasets["datasets"]
+                if self.generate_signature(ds) != self.previous_dataset_signature
+            ]
+
+        # Add the new dataset
+        existing_datasets["datasets"].append(new_dataset)
+
+        # Store the new dataset signature for future runs
+        self.previous_dataset_signature = new_dataset_signature
+
+        # Convert back to JSON and update dataset_config
+        updated_dataset_json = json.dumps(existing_datasets, indent=2)
         dataset_config["datasets"] = updated_dataset_json
-        return (dataset_config,)
+
+        return dataset_config,
+
+    def generate_signature(self, dataset):
+        # Create a unique signature for the dataset based on its attributes
+        return json.dumps(dataset, sort_keys=True)
 
 class OptimizerConfig:
     @classmethod

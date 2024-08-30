@@ -1738,6 +1738,8 @@ class DreamBoothDataset(BaseDataset):
                 # we may need to check image size and existence of image files, but it takes time, so user should check it before training
             else:
                 img_paths = glob_images(subset.image_dir, "*")
+                if not img_paths:
+                    raise ValueError(f"no image files found in {subset.image_dir}")
                 sizes = [None] * len(img_paths)
 
                 # new caching: get image size from cache files
