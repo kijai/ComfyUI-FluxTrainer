@@ -28,7 +28,9 @@ And some (optional) debugging nodes from:
 
 https://github.com/rgthree/rgthree-comfy
 
-For LoRA training the models need to be the normal fp8 or fp16 versions, also make sure the VAE is the non-diffusers version.
+For LoRA training the models need to be the normal fp8 or fp16 versions, also make sure the VAE is the non-diffusers version:
+
+https://huggingface.co/black-forest-labs/FLUX.1-dev/blob/main/ae.safetensors
 
 For full model training the fp16 version of the main model needs to be used.
 
