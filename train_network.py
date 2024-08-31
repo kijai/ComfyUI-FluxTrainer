@@ -539,7 +539,7 @@ class NetworkTrainer:
             accelerator.print("enable fp8 training for U-Net.")
             unet_weight_dtype = torch.float8_e4m3fn
 
-            if not args.fp8_base_unet:
+            if not args.fp8_base_unet and not args.network_train_unet_only:
                 accelerator.print("enable fp8 training for Text Encoder.")
             te_weight_dtype = weight_dtype if args.fp8_base_unet else torch.float8_e4m3fn
 
