@@ -362,7 +362,7 @@ def compute_loss_weighting_for_sd3(weighting_scheme: str, sigmas=None):
 def get_noisy_model_input_and_timesteps(
     args, noise_scheduler, latents, noise, device, dtype
 ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-    bsz = latents.shape[0]
+    bsz, _, H, W = latents.shape
     sigmas = None
 
     if args.timestep_sampling == "uniform" or args.timestep_sampling == "sigmoid":
@@ -385,6 +385,12 @@ def get_noisy_model_input_and_timesteps(
         t = timesteps.view(-1, 1, 1, 1)
         timesteps = timesteps * 1000.0
         noisy_model_input = (1 - t) * latents + t * noise
+    elif args.timestep_sampling == "flux_shift":
+        logits_norm = torch.randn(bsz, device=device)
+        logits_norm = logits_norm * args.sigmoid_scale  # larger scale for more uniform sampling
+        timesteps = logits_norm.sigmoid()
+        mu=get_lin_function(y1=0.5, y2=1.15)((H//2) * (W//2))
+        timesteps = time_shift(mu, 1.0, timesteps)
     else:
         # Sample a random timestep for each image
         # for weighting schemes where we sample timesteps non-uniformly
