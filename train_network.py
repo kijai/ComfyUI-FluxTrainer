@@ -632,15 +632,15 @@ class NetworkTrainer:
         def save_model_hook(models, weights, output_dir):
             # pop weights of other models than network to save only network weights
             # only main process or deepspeed https://github.com/huggingface/diffusers/issues/2606
-            if args.deepspeed:
-                remove_indices = []
-                for i, model in enumerate(models):
-                    if not isinstance(model, type(accelerator.unwrap_model(network))):
-                        remove_indices.append(i)
-                for i in reversed(remove_indices):
-                    if len(weights) > i:
-                        weights.pop(i)
-                # print(f"save model hook: {len(weights)} weights will be saved")
+            #if args.deepspeed:
+            remove_indices = []
+            for i, model in enumerate(models):
+                if not isinstance(model, type(accelerator.unwrap_model(network))):
+                    remove_indices.append(i)
+            for i in reversed(remove_indices):
+                if len(weights) > i:
+                    weights.pop(i)
+            # print(f"save model hook: {len(weights)} weights will be saved")
 
             # save current ecpoch and step
             train_state_file = os.path.join(output_dir, "train_state.json")
