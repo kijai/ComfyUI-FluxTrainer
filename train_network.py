@@ -352,9 +352,10 @@ class NetworkTrainer:
         pbar.update(1)
 
         # Load the model for incremental learning
-        sys.path.append(os.path.dirname(__file__))
+        #sys.path.append(os.path.dirname(__file__))
         accelerator.print("import network module:", args.network_module)
-        network_module = importlib.import_module(args.network_module)
+        package = __name__.split('.')[0]
+        network_module = importlib.import_module(args.network_module, package=package)
 
         if args.base_weights is not None:
             # base_weights が指定されている場合は、指定された重みを読み込みマージする

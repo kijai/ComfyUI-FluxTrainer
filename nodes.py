@@ -388,7 +388,7 @@ class InitFluxLoRATraining:
             "max_data_loader_n_workers": 0,
             "seed": 42,
             "gradient_checkpointing": True,
-            "network_module": "networks.lora_flux",
+            "network_module": ".networks.lora_flux",
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
