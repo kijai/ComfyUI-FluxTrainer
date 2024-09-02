@@ -1095,9 +1095,9 @@ class FluxUpper(nn.Module):
     Transformer model for flow matching on sequences.
     """
 
-    def __init__(self, params: FluxParams):
+    def __init__(self, params: FluxParams, lower_model):
         super().__init__()
-
+        self.lower_model = lower_model
         self.params = params
         self.in_channels = params.in_channels
         self.out_channels = self.in_channels
@@ -1127,6 +1127,19 @@ class FluxUpper(nn.Module):
             ]
         )
 
+        self.excluded_blocks = [7]
+        if self.excluded_blocks is None:
+            self.excluded_blocks = []  # default to no blocks excluded
+
+        self.single_blocks = nn.ModuleList(
+            [
+                SingleStreamBlock(self.hidden_size, self.num_heads, mlp_ratio=params.mlp_ratio)
+                for i in range(params.depth_single_blocks) if i not in self.excluded_blocks
+            ]
+        )
+        print("UPPER: Single blocks: ", self.single_blocks)
+
+        self.final_layer = LastLayer(self.hidden_size, 1, self.out_channels)
         self.gradient_checkpointing = False
 
     @property
@@ -1173,6 +1186,7 @@ class FluxUpper(nn.Module):
         y: Tensor,
         guidance: Tensor | None = None,
         txt_attention_mask: Tensor | None = None,
+        train_lower=False
     ) -> Tensor:
         if img.ndim != 3 or txt.ndim != 3:
             raise ValueError("Input img and txt tensors must have 3 dimensions.")
@@ -1193,7 +1207,20 @@ class FluxUpper(nn.Module):
         for block in self.double_blocks:
             img, txt = block(img=img, txt=txt, vec=vec, pe=pe, txt_attention_mask=txt_attention_mask)
 
-        return img, txt, vec, pe
+        img = torch.cat((txt, img), 1)
+
+        for i, block in enumerate(self.single_blocks):
+            if i in self.excluded_blocks:
+                img = self.lower_model(img, txt, vec=vec, pe=pe, txt_attention_mask=txt_attention_mask, train=train_lower)
+            else:
+                img = block(img, vec=vec, pe=pe, txt_attention_mask=txt_attention_mask)
+            print(img.shape)
+
+        img = img[:, txt.shape[1]:, ...]
+
+        img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
+
+        return img
 
 
 class FluxLower(nn.Module):
@@ -1207,14 +1234,23 @@ class FluxLower(nn.Module):
         self.num_heads = params.num_heads
         self.out_channels = params.in_channels
 
+        selected_blocks = [7]
+
+        if selected_blocks is None:
+            selected_blocks = range(params.depth_single_blocks)  # default to all blocks
+
         self.single_blocks = nn.ModuleList(
             [
                 SingleStreamBlock(self.hidden_size, self.num_heads, mlp_ratio=params.mlp_ratio)
-                for _ in range(params.depth_single_blocks)
+                for i in selected_blocks
             ]
         )
+        
+        for i, block in enumerate(self.single_blocks):
+            print(f"LOWER: Single block {i}: {block.__class__.__name__}")
+        print("LOWER: Single blocks: ", self.single_blocks)
 
-        self.final_layer = LastLayer(self.hidden_size, 1, self.out_channels)
+        #self.final_layer = LastLayer(self.hidden_size, 1, self.out_channels)
 
         self.gradient_checkpointing = False
 
@@ -1249,11 +1285,20 @@ class FluxLower(nn.Module):
         vec: Tensor | None = None,
         pe: Tensor | None = None,
         txt_attention_mask: Tensor | None = None,
+        train: bool = False,
     ) -> Tensor:
-        img = torch.cat((txt, img), 1)
-        for block in self.single_blocks:
-            img = block(img, vec=vec, pe=pe, txt_attention_mask=txt_attention_mask)
-        img = img[:, txt.shape[1] :, ...]
+        
+        if train:
+            img.requires_grad_(True)
+            txt.requires_grad_(True)
+            vec.requires_grad_(True)
+            pe.requires_grad_(True)
+        #img = torch.cat((txt, img), 1)
+        print("img.shape to lower: ", img.shape)
+        with torch.enable_grad():
+            for block in self.single_blocks:
+                img = block(img, vec=vec, pe=pe, txt_attention_mask=txt_attention_mask)
+        #img = img[:, txt.shape[1] :, ...]
 
-        img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
+        #img = self.final_layer(img, vec)  # (N, T, patch_size ** 2 * out_channels)
         return img

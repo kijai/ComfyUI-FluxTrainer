@@ -67,8 +67,9 @@ class FluxNetworkTrainer(NetworkTrainer):
 
         logger.info("prepare split model")
         with init_empty_weights():
-            flux_upper = flux_models.FluxUpper(model.params)
             flux_lower = flux_models.FluxLower(model.params)
+            flux_upper = flux_models.FluxUpper(model.params, flux_lower)
+            
         sd = model.state_dict()
 
         # lower (trainable)
@@ -234,12 +235,12 @@ class FluxNetworkTrainer(NetworkTrainer):
                 self.target_device = device
 
             def forward(self, img, img_ids, txt, txt_ids, timesteps, y, guidance=None, txt_attention_mask=None):
-                self.flux_lower.to("cpu")
-                clean_memory_on_device(self.target_device)
+                #self.flux_lower.to("cpu")
+                #clean_memory_on_device(self.target_device)
                 self.flux_upper.to(self.target_device)
                 img, txt, vec, pe = self.flux_upper(img, img_ids, txt, txt_ids, timesteps, y, guidance, txt_attention_mask)
-                self.flux_upper.to("cpu")
-                clean_memory_on_device(self.target_device)
+                #self.flux_upper.to("cpu")
+                #clean_memory_on_device(self.target_device)
                 self.flux_lower.to(self.target_device)
                 return self.flux_lower(img, txt, vec, pe, txt_attention_mask)
 
@@ -374,16 +375,16 @@ class FluxNetworkTrainer(NetworkTrainer):
                 )
         else:
             # split forward to reduce memory usage
-            assert network.train_blocks == "single", "train_blocks must be single for split mode"
+            #assert network.train_blocks == "single", "train_blocks must be single for split mode"
             with accelerator.autocast():
                 # move flux lower to cpu, and then move flux upper to gpu
-                unet.to("cpu")
-                clean_memory_on_device(accelerator.device)
+                #unet.to("cpu")
+                #clean_memory_on_device(accelerator.device)
                 self.flux_upper.to(accelerator.device)
 
                 # upper model does not require grad
                 with torch.no_grad():
-                    intermediate_img, intermediate_txt, vec, pe = self.flux_upper(
+                    model_pred = self.flux_upper(
                         img=packed_noisy_model_input,
                         img_ids=img_ids,
                         txt=t5_out,
@@ -392,19 +393,20 @@ class FluxNetworkTrainer(NetworkTrainer):
                         timesteps=timesteps / 1000,
                         guidance=guidance_vec,
                         txt_attention_mask=t5_attn_mask,
+                        train_lower=True,
                     )
-
+                model_pred.requires_grad_(True)
                 # move flux upper back to cpu, and then move flux lower to gpu
-                self.flux_upper.to("cpu")
-                clean_memory_on_device(accelerator.device)
-                unet.to(accelerator.device)
+                #self.flux_upper.to("cpu")
+                #clean_memory_on_device(accelerator.device)
+                #unet.to(accelerator.device)
 
                 # lower model requires grad
-                intermediate_img.requires_grad_(True)
-                intermediate_txt.requires_grad_(True)
-                vec.requires_grad_(True)
-                pe.requires_grad_(True)
-                model_pred = unet(img=intermediate_img, txt=intermediate_txt, vec=vec, pe=pe, txt_attention_mask=t5_attn_mask)
+                # intermediate_img.requires_grad_(True)
+                # intermediate_txt.requires_grad_(True)
+                # vec.requires_grad_(True)
+                # pe.requires_grad_(True)
+                #model_pred = unet(img=intermediate_img, txt=intermediate_txt, vec=vec, pe=pe, txt_attention_mask=t5_attn_mask)
 
         # unpack latents
         model_pred = flux_utils.unpack_latents(model_pred, packed_latent_height, packed_latent_width)

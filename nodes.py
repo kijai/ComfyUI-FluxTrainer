@@ -331,6 +331,7 @@ class InitFluxLoRATraining:
                 "train_clip_l": (['disabled', 'use_gradient_dtype', 'use_fp8'], {"default": 'disabled', "tooltip": "also train the clip_l text encoder using specified dtype"}),
                 "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
                 "train_blocks": ("BLOCKS", ),
+                "gradient_checkpointing": ("BOOLEAN", {"default": True, "tooltip": "use gradient checkpointing"}),
             },
         }
 
@@ -340,7 +341,7 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_clip_l='disabled', train_blocks=None, **kwargs,):
+                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_clip_l='disabled', train_blocks=None, gradient_checkpointing=True, **kwargs,):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -404,7 +405,7 @@ class InitFluxLoRATraining:
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
-            "gradient_checkpointing": True,
+            #"gradient_checkpointing": True,
             "network_module": ".networks.lora_flux",
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
@@ -415,6 +416,8 @@ class InitFluxLoRATraining:
             "network_train_unet_only": True if train_clip_l == 'disabled' else False,
             "fp8_base_unet": True if train_clip_l=='use_gradient_dtype' else False,
         }
+        if gradient_checkpointing:
+            config_dict["gradient_checkpointing"] = True
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
             "xformers": {"mem_eff_attn": True, "xformers": True, "spda": False}
@@ -434,7 +437,7 @@ class InitFluxLoRATraining:
             }
             config_dict.update(split_mode_settings.get(split_mode, {}))
         else:
-            config_dict["split_mode"] = False
+            config_dict["split_mode"] = True
             if "network_args" not in config_dict:
                 config_dict["network_args"] = []
             config_dict["network_args"].append(f"train_blocks={train_blocks}")
