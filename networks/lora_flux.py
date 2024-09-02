@@ -253,8 +253,8 @@ def create_network(
 
     # single or double blocks
     train_blocks = kwargs.get("train_blocks", None)  # None (default), "all" (same as None), "single", "double"
-    if train_blocks is not None:
-        assert train_blocks in ["all", "single", "double"], f"invalid train_blocks: {train_blocks}"
+    #if train_blocks is not None:
+    #    assert train_blocks in ["all", "single", "double"], f"invalid train_blocks: {train_blocks}"
 
     # すごく引数が多いな ( ^ω^)･･･
     network = LoRANetwork(
@@ -383,53 +383,77 @@ class LoRANetwork(torch.nn.Module):
                 else (self.LORA_PREFIX_TEXT_ENCODER_CLIP if text_encoder_idx == 0 else self.LORA_PREFIX_TEXT_ENCODER_T5)
             )
 
+            def process_module(name, module, prefix, modules_dim, modules_alpha, dropout, rank_dropout, module_dropout, target_replace_modules):
+                loras = []
+                skipped = []
+            
+                def process_child(child_name, child_module):
+                    is_linear = child_module.__class__.__name__ == "Linear"
+                    is_conv2d = child_module.__class__.__name__ == "Conv2d"
+                    is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
+            
+                    if is_linear or is_conv2d:
+                        lora_name = prefix + "." + name + "." + child_name
+                        lora_name = lora_name.replace(".", "_")
+            
+                        dim = None
+                        alpha = None
+            
+                        if modules_dim is not None:
+                            # Module specified
+                            if lora_name in modules_dim:
+                                dim = modules_dim[lora_name]
+                                alpha = modules_alpha[lora_name]
+                        else:
+                            # Normally, target all
+                            if is_linear or is_conv2d_1x1:
+                                dim = self.lora_dim
+                                alpha = self.alpha
+                            elif self.conv_lora_dim is not None:
+                                dim = self.conv_lora_dim
+                                alpha = self.conv_alpha
+            
+                        if dim is None or dim == 0:
+                            # Output skipped information
+                            if is_linear or is_conv2d_1x1 or (self.conv_lora_dim is not None):
+                                skipped.append(lora_name)
+                            return
+            
+                        lora = module_class(
+                            lora_name,
+                            child_module,
+                            self.multiplier,
+                            dim,
+                            alpha,
+                            dropout=dropout,
+                            rank_dropout=rank_dropout,
+                            module_dropout=module_dropout,
+                        )
+                        loras.append(lora)
+            
+                for child_name, child_module in module.named_modules():
+                    process_child(child_name, child_module)
+            
+                return loras, skipped
+            
+            
             loras = []
             skipped = []
+
+            target_replace_modules = [module.strip() for module in target_replace_modules]
+            
             for name, module in root_module.named_modules():
-                if module.__class__.__name__ in target_replace_modules:
-                    for child_name, child_module in module.named_modules():
-                        is_linear = child_module.__class__.__name__ == "Linear"
-                        is_conv2d = child_module.__class__.__name__ == "Conv2d"
-                        is_conv2d_1x1 = is_conv2d and child_module.kernel_size == (1, 1)
-
-                        if is_linear or is_conv2d:
-                            lora_name = prefix + "." + name + "." + child_name
-                            lora_name = lora_name.replace(".", "_")
-
-                            dim = None
-                            alpha = None
-
-                            if modules_dim is not None:
-                                # モジュール指定あり
-                                if lora_name in modules_dim:
-                                    dim = modules_dim[lora_name]
-                                    alpha = modules_alpha[lora_name]
-                            else:
-                                # 通常、すべて対象とする
-                                if is_linear or is_conv2d_1x1:
-                                    dim = self.lora_dim
-                                    alpha = self.alpha
-                                elif self.conv_lora_dim is not None:
-                                    dim = self.conv_lora_dim
-                                    alpha = self.conv_alpha
-
-                            if dim is None or dim == 0:
-                                # skipした情報を出力
-                                if is_linear or is_conv2d_1x1 or (self.conv_lora_dim is not None):
-                                    skipped.append(lora_name)
-                                continue
-
-                            lora = module_class(
-                                lora_name,
-                                child_module,
-                                self.multiplier,
-                                dim,
-                                alpha,
-                                dropout=dropout,
-                                rank_dropout=rank_dropout,
-                                module_dropout=module_dropout,
-                            )
-                            loras.append(lora)
+                if any("blocks" in part for part in target_replace_modules) and name in target_replace_modules:
+                    print(module)
+                    module_loras, module_skipped = process_module(name, module, prefix, modules_dim, modules_alpha, dropout, rank_dropout, module_dropout, target_replace_modules)
+                    loras.extend(module_loras)
+                    skipped.extend(module_skipped)
+                elif module.__class__.__name__ in target_replace_modules:
+                    print(module)
+                    module_loras, module_skipped = process_module(name, module, prefix, modules_dim, modules_alpha, dropout, rank_dropout, module_dropout, target_replace_modules)
+                    loras.extend(module_loras)
+                    skipped.extend(module_skipped)
+            
             return loras, skipped
 
         # create LoRA for text encoder
@@ -444,9 +468,12 @@ class LoRANetwork(torch.nn.Module):
             self.text_encoder_loras.extend(text_encoder_loras)
             skipped_te += skipped
         logger.info(f"create LoRA for Text Encoder: {len(self.text_encoder_loras)} modules.")
-
+        print("TRAIN BLOCKS:", self.train_blocks)
         # create LoRA for U-Net
-        if self.train_blocks == "all":
+        if any("blocks" in part for part in self.train_blocks.split(',')):
+            target_replace_modules = self.train_blocks.split(',')
+            print("TARGET_REPLACE_MODULES:", target_replace_modules)
+        elif self.train_blocks == "all":
             target_replace_modules = LoRANetwork.FLUX_TARGET_REPLACE_MODULE_DOUBLE + LoRANetwork.FLUX_TARGET_REPLACE_MODULE_SINGLE
         elif self.train_blocks == "single":
             target_replace_modules = LoRANetwork.FLUX_TARGET_REPLACE_MODULE_SINGLE

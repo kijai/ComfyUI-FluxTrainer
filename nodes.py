@@ -270,7 +270,23 @@ class OptimizerConfigProdigy:
         kwargs["optimizer_args"] = node_args + extra_args
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         
-        return (kwargs,)    
+        return (kwargs,)
+    
+class FluxLoRATrainBlocks:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "train_blocks": ("STRING",{"default": "single_blocks.7", "multiline": True, "tooltip": "specify individual blocks to include in the training, for example 'single_blocks.7'"}),
+           },
+        }
+
+    RETURN_TYPES = ("BLOCKS",)
+    RETURN_NAMES = ("train_blocks",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, train_blocks):
+        return (train_blocks,)    
 
 class InitFluxLoRATraining:
     @classmethod
@@ -314,6 +330,7 @@ class InitFluxLoRATraining:
                 "resume_args": ("ARGS", {"default": "", "tooltip": "resume args to pass to the training command"}),
                 "train_clip_l": (['disabled', 'use_gradient_dtype', 'use_fp8'], {"default": 'disabled', "tooltip": "also train the clip_l text encoder using specified dtype"}),
                 "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
+                "train_blocks": ("BLOCKS", ),
             },
         }
 
@@ -323,7 +340,7 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_clip_l='disabled', **kwargs,):
+                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_clip_l='disabled', train_blocks=None, **kwargs,):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -410,11 +427,20 @@ class InitFluxLoRATraining:
         }
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
 
-        split_mode_settings = {
-            True: {"split_mode": True, "network_args": ["train_blocks=single"]},
-            False: {"split_mode": False, "network_args": ["train_blocks=all"]}
-        }
-        config_dict.update(split_mode_settings.get(split_mode, {}))
+        if train_blocks is None:
+            split_mode_settings = {
+                True: {"split_mode": True, "network_args": ["train_blocks=single"]},
+                False: {"split_mode": False, "network_args": ["train_blocks=all"]}
+            }
+            config_dict.update(split_mode_settings.get(split_mode, {}))
+        else:
+            config_dict["split_mode"] = False
+            if "network_args" not in config_dict:
+                config_dict["network_args"] = []
+            config_dict["network_args"].append(f"train_blocks={train_blocks}")
+
+        print("NETWORK ARGS: ", config_dict["network_args"])
+            
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
@@ -1425,7 +1451,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainSaveModel": FluxTrainSaveModel,
     "ExtractFluxLoRA": ExtractFluxLoRA,
     "OptimizerConfigProdigy": OptimizerConfigProdigy,
-    "FluxTrainResume": FluxTrainResume
+    "FluxTrainResume": FluxTrainResume,
+    "FluxLoRATrainBlocks": FluxLoRATrainBlocks
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1446,5 +1473,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainSaveModel": "Flux Train Save Model",
     "ExtractFluxLoRA": "Extract Flux LoRA",
     "OptimizerConfigProdigy": "Optimizer Config Prodigy",
-    "FluxTrainResume": "Flux Train Resume"
+    "FluxTrainResume": "Flux Train Resume",
+    "FluxLoRATrainBlocks": "FluxLoRATrainBlocks"
 }
