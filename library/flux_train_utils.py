@@ -83,7 +83,7 @@ def sample_images(
     except Exception:
         pass
 
-    with torch.no_grad():
+    with torch.no_grad(), accelerator.autocast():
         image_tensor_list = []
         for prompt_dict in prompts:
             image_tensor = sample_image_inference(
