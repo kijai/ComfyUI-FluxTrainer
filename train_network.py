@@ -158,6 +158,9 @@ class NetworkTrainer:
 
     # region SD/SDXL
 
+    def post_process_network(self, args, accelerator, network, text_encoders, unet):
+        pass
+
     def get_noise_scheduler(self, args: argparse.Namespace, device: torch.device) -> Any:
         noise_scheduler = DDPMScheduler(
             beta_start=0.00085, beta_end=0.012, beta_schedule="scaled_linear", num_train_timesteps=1000, clip_sample=False
@@ -231,12 +234,19 @@ class NetworkTrainer:
 
     def get_sai_model_spec(self, args):
         return train_util.get_sai_model_spec(None, args, self.is_sdxl, True, False)
-    
-    def is_text_encoder_not_needed_for_training(self, args):
-        return False  # use for sample images
 
     def update_metadata(self, metadata, args):
         pass
+
+    def is_text_encoder_not_needed_for_training(self, args):
+        return False  # use for sample images
+
+    def prepare_text_encoder_grad_ckpt_workaround(self, index, text_encoder):
+        # set top parameter requires_grad = True for gradient checkpointing works
+        text_encoder.text_model.embeddings.requires_grad_(True)
+
+    def prepare_text_encoder_fp8(self, index, text_encoder, te_weight_dtype, weight_dtype):
+        text_encoder.text_model.embeddings.to(dtype=weight_dtype)
 
     # endregion
 
@@ -318,7 +328,7 @@ class NetworkTrainer:
         collator = train_util.collator_class(current_epoch, current_step, ds_for_collator)
 
         if args.debug_dataset:
-            train_dataset_group.set_current_strategies()
+            train_dataset_group.set_current_strategies()  # dasaset needs to know the strategies explicitly
             train_util.debug_dataset(train_dataset_group)
             return
         if len(train_dataset_group) == 0:
@@ -332,7 +342,7 @@ class NetworkTrainer:
                 train_dataset_group.is_latent_cacheable()
             ), "when caching latents, either color_aug or random_crop cannot be used / latentをキャッシュするときはcolor_augとrandom_cropは使えません"
 
-        self.assert_extra_args(args, train_dataset_group)
+        self.assert_extra_args(args, train_dataset_group)  # may change some args
 
         # prepare accelerator
         logger.info("preparing accelerator")
@@ -434,12 +444,15 @@ class NetworkTrainer:
             )
             args.scale_weight_norms = False
 
+        self.post_process_network(args, accelerator, network, text_encoders, unet)
+
+        # apply network to unet and text_encoder
         train_unet = not args.network_train_text_encoder_only
         train_text_encoder = self.is_train_text_encoder(args)
         network.apply_to(text_encoder, unet, train_text_encoder, train_unet)
 
         if args.network_weights is not None:
-            # FIXME consider alpha of weights
+            # FIXME consider alpha of weights: this assumes that the alpha is not changed
             info = network.load_weights(args.network_weights)
             accelerator.print(f"load network weights from {args.network_weights}: {info}")
 
@@ -551,17 +564,16 @@ class NetworkTrainer:
 
         unet.requires_grad_(False)
         unet.to(dtype=unet_weight_dtype)
-        for t_enc in text_encoders:
+        for i, t_enc in enumerate(text_encoders):
             t_enc.requires_grad_(False)
 
             # in case of cpu, dtype is already set to fp32 because cpu does not support fp8/fp16/bf16
             if t_enc.device.type != "cpu":
                 t_enc.to(dtype=te_weight_dtype)
-                if hasattr(t_enc, "text_model") and hasattr(t_enc.text_model, "embeddings"):
-                    # nn.Embedding not support FP8
-                    t_enc.text_model.embeddings.to(dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
-                elif hasattr(t_enc, "encoder") and hasattr(t_enc.encoder, "embeddings"):
-                    t_enc.encoder.embeddings.to(dtype=(weight_dtype if te_weight_dtype != weight_dtype else te_weight_dtype))
+
+                # nn.Embedding not support FP8
+                if te_weight_dtype != weight_dtype:
+                    self.prepare_text_encoder_fp8(i, t_enc, te_weight_dtype, weight_dtype)
 
         # acceleratorがなんかよろしくやってくれるらしい / accelerator will do something good
         if args.deepspeed:
@@ -602,12 +614,12 @@ class NetworkTrainer:
         if args.gradient_checkpointing:
             # according to TI example in Diffusers, train is required
             unet.train()
-            for t_enc, frag in zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders)):
+            for i, (t_enc, frag) in enumerate(zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders))):
                 t_enc.train()
 
                 # set top parameter requires_grad = True for gradient checkpointing works
                 if frag:
-                    t_enc.text_model.embeddings.requires_grad_(True)
+                    self.prepare_text_encoder_grad_ckpt_workaround(i, t_enc)
 
         else:
             unet.eval()
@@ -1032,8 +1044,12 @@ class NetworkTrainer:
 
         # log device and dtype for each model
         logger.info(f"unet dtype: {unet_weight_dtype}, device: {unet.device}")
-        for t_enc in text_encoders:
-            logger.info(f"text_encoder dtype: {t_enc.dtype}, device: {t_enc.device}")
+        for i, t_enc in enumerate(text_encoders):
+            params_itr = t_enc.parameters()
+            params_itr.__next__()  # skip the first parameter
+            params_itr.__next__()  # skip the second parameter. because CLIP first two parameters are embeddings
+            param_3rd = params_itr.__next__()
+            logger.info(f"text_encoder [{i}] dtype: {param_3rd.dtype}, device: {t_enc.device}")
 
         clean_memory_on_device(accelerator.device)
 
@@ -1104,15 +1120,11 @@ class NetworkTrainer:
                         # print(f"set multiplier: {multipliers}")
                         accelerator.unwrap_model(network).set_multiplier(multipliers)
 
+                    text_encoder_conds = []
                     text_encoder_outputs_list = batch.get("text_encoder_outputs_list", None)
                     if text_encoder_outputs_list is not None:
                         text_encoder_conds = text_encoder_outputs_list  # List of text encoder outputs
-                    if (
-                        text_encoder_conds is None
-                        or len(text_encoder_conds) == 0
-                        or text_encoder_conds[0] is None
-                        or train_text_encoder
-                    ):
+                    if len(text_encoder_conds) == 0 or text_encoder_conds[0] is None or train_text_encoder:
                         with torch.set_grad_enabled(train_text_encoder), accelerator.autocast():
                             # Get the text embedding for conditioning
                             if args.weighted_captions:
@@ -1135,10 +1147,14 @@ class NetworkTrainer:
                                 if args.full_fp16:
                                     encoded_text_encoder_conds = [c.to(weight_dtype) for c in encoded_text_encoder_conds]
 
-                        # if encoded_text_encoder_conds is not None, update cached text_encoder_conds
-                        for i in range(len(encoded_text_encoder_conds)):
-                            if encoded_text_encoder_conds[i] is not None:
-                                text_encoder_conds[i] = encoded_text_encoder_conds[i]
+                        # if text_encoder_conds is not cached, use encoded_text_encoder_conds
+                        if len(text_encoder_conds) == 0:
+                            text_encoder_conds = encoded_text_encoder_conds
+                        else:
+                            # if encoded_text_encoder_conds is not None, update cached text_encoder_conds
+                            for i in range(len(encoded_text_encoder_conds)):
+                                if encoded_text_encoder_conds[i] is not None:
+                                    text_encoder_conds[i] = encoded_text_encoder_conds[i]
 
                     # sample noise, call unet, get target
                     noise_pred, target, timesteps, huber_c, weighting = self.get_noise_pred_and_target(
@@ -1266,6 +1282,12 @@ def setup_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--unet_lr", type=float, default=None, help="learning rate for U-Net / U-Netの学習率")
     parser.add_argument("--text_encoder_lr", type=float, default=None, help="learning rate for Text Encoder / Text Encoderの学習率")
+    parser.add_argument(
+        "--fp8_base_unet",
+        action="store_true",
+        help="use fp8 for U-Net (or DiT), Text Encoder is fp16 or bf16"
+        " / U-Net（またはDiT）にfp8を使用する。Text Encoderはfp16またはbf16",
+    )
 
     parser.add_argument(
         "--network_weights", type=str, default=None, help="pretrained weights for network / 学習するネットワークの初期重み"
@@ -1360,12 +1382,6 @@ def setup_parser() -> argparse.ArgumentParser:
         default=None,
         help="initial step number including all epochs, 0 means first step (same as not specifying). overwrites initial_epoch."
         + " / 初期ステップ数、全エポックを含むステップ数、0で最初のステップ（未指定時と同じ）。initial_epochを上書きする",
-    )
-    parser.add_argument(
-        "--fp8_base_unet",
-        action="store_true",
-        help="use fp8 for U-Net (or DiT), Text Encoder is fp16 or bf16"
-        " / U-Net（またはDiT）にfp8を使用する。Text Encoderはfp16またはbf16",
     )
     # parser.add_argument("--loraplus_lr_ratio", default=None, type=float, help="LoRA+ learning rate ratio")
     # parser.add_argument("--loraplus_unet_lr_ratio", default=None, type=float, help="LoRA+ UNet learning rate ratio")

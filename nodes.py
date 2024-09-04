@@ -312,7 +312,7 @@ class InitFluxLoRATraining:
             "optional": {
                 "additional_args": ("STRING", {"multiline": True, "default": "", "tooltip": "additional args to pass to the training command"}),
                 "resume_args": ("ARGS", {"default": "", "tooltip": "resume args to pass to the training command"}),
-                "train_clip_l": (['disabled', 'use_gradient_dtype', 'use_fp8'], {"default": 'disabled', "tooltip": "also train the clip_l text encoder using specified dtype"}),
+                "train_text_encoder": (['disabled', 'clip_l', 'clip_l_fp8', 'clip_l+T5', 'clip_l+T5_fp8'], {"default": 'disabled', "tooltip": "also train the selected text encoders using specified dtype, T5 can not be trained without clip_l"}),
                 "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
             },
         }
@@ -323,7 +323,7 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_clip_l='disabled', **kwargs,):
+                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_text_encoder='disabled', **kwargs,):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -395,8 +395,9 @@ class InitFluxLoRATraining:
             "text_encoder_lr": 0,
             "t5xxl_max_token_length": 512,
             "alpha_mask": dataset["alpha_mask"],
-            "network_train_unet_only": True if train_clip_l == 'disabled' else False,
-            "fp8_base_unet": True if train_clip_l=='use_gradient_dtype' else False,
+            "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
+            "fp8_base_unet": False if "fp8" in train_text_encoder else True,
+            "disable_mmap_load_safetensors": False
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
@@ -415,6 +416,13 @@ class InitFluxLoRATraining:
             False: {"split_mode": False, "network_args": ["train_blocks=all"]}
         }
         config_dict.update(split_mode_settings.get(split_mode, {}))
+
+        if "T5" in train_text_encoder:
+            additional_network_args = ["train_t5xxl=True"]
+            if 'network_args' in config_dict and isinstance(config_dict['network_args'], list):
+                config_dict['network_args'].extend(additional_network_args)
+            else:
+                config_dict['network_args'] = additional_network_args
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
@@ -554,6 +562,7 @@ class InitFluxTraining:
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_{save_dtype}",
             "mem_eff_save": True,
+            "disable_mmap_load_safetensors": True,
 
         }
         optimizer_fusing_settings = {

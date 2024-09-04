@@ -6,6 +6,7 @@ import numpy as np
 from transformers import CLIPTokenizer, T5TokenizerFast
 
 from . import train_util
+from .flux_utils import get_t5xxl_actual_dtype
 from .strategy_base import LatentsCachingStrategy, TextEncodingStrategy, TokenizeStrategy, TextEncoderOutputsCachingStrategy
 
 from .utils import setup_logging
@@ -80,7 +81,7 @@ class FluxTextEncodingStrategy(TextEncodingStrategy):
         else:
             t5_out = None
             txt_ids = None
-            t5_attn_mask = None # caption may be dropped/shuffled, so t5_attn_mask should not be used to make sure the mask is same as the cached one
+            t5_attn_mask = None  # caption may be dropped/shuffled, so t5_attn_mask should not be used to make sure the mask is same as the cached one
 
         return [l_pooled, t5_out, txt_ids, t5_attn_mask]  # returns t5_attn_mask for attention mask in transformer
 
@@ -98,6 +99,8 @@ class FluxTextEncoderOutputsCachingStrategy(TextEncoderOutputsCachingStrategy):
     ) -> None:
         super().__init__(cache_to_disk, batch_size, skip_disk_cache_validity_check, is_partial)
         self.apply_t5_attn_mask = apply_t5_attn_mask
+
+        self.warn_fp8_weights = False
 
     def get_outputs_npz_path(self, image_abs_path: str) -> str:
         return os.path.splitext(image_abs_path)[0] + FluxTextEncoderOutputsCachingStrategy.FLUX_TEXT_ENCODER_OUTPUTS_NPZ_SUFFIX
@@ -144,6 +147,13 @@ class FluxTextEncoderOutputsCachingStrategy(TextEncoderOutputsCachingStrategy):
     def cache_batch_outputs(
         self, tokenize_strategy: TokenizeStrategy, models: List[Any], text_encoding_strategy: TextEncodingStrategy, infos: List
     ):
+        if not self.warn_fp8_weights:
+            if get_t5xxl_actual_dtype(models[1]) == torch.float8_e4m3fn:
+                logger.warning(
+                    "T5 model is using fp8 weights for caching. This may affect the quality of the cached outputs."
+                )
+            self.warn_fp8_weights = True
+
         flux_text_encoding_strategy: FluxTextEncodingStrategy = text_encoding_strategy
         captions = [info.caption for info in infos]
 
