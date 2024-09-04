@@ -20,3 +20,4 @@ came_pytorch
 matplotlib
 # for T5XXL tokenizer (SD3/FLUX)
 sentencepiece>=0.2.0
+protobuf
