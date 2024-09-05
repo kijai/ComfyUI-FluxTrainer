@@ -444,7 +444,11 @@ class NetworkTrainer:
             accelerator.print(f"load network weights from {args.network_weights}: {info}")
 
         if args.gradient_checkpointing:
-            unet.enable_gradient_checkpointing()
+            if args.cpu_offload_checkpointing:
+                unet.enable_gradient_checkpointing(cpu_offload=True)
+            else:
+                unet.enable_gradient_checkpointing()
+
             for t_enc, flag in zip(text_encoders, self.get_text_encoders_train_flags(args, text_encoders)):
                 if flag:
                     if t_enc.supports_gradient_checkpointing:
@@ -1366,6 +1370,12 @@ def setup_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="use fp8 for U-Net (or DiT), Text Encoder is fp16 or bf16"
         " / U-Net（またはDiT）にfp8を使用する。Text Encoderはfp16またはbf16",
+    )
+    parser.add_argument(
+        "--cpu_offload_checkpointing",
+        action="store_true",
+        help="[EXPERIMENTAL] enable offloading of tensors to CPU during checkpointing for U-Net or DiT, if supported"
+        " / 勾配チェックポイント時にテンソルをCPUにオフロードする（U-NetまたはDiTのみ、サポートされている場合）",
     )
     # parser.add_argument("--loraplus_lr_ratio", default=None, type=float, help="LoRA+ learning rate ratio")
     # parser.add_argument("--loraplus_unet_lr_ratio", default=None, type=float, help="LoRA+ UNet learning rate ratio")

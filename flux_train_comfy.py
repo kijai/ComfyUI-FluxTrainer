@@ -276,7 +276,7 @@ class FluxTrainer:
         flux = flux_utils.load_flow_model(name, args.pretrained_model_name_or_path, weight_dtype, "cpu")
 
         if args.gradient_checkpointing:
-            flux.enable_gradient_checkpointing(args.cpu_offload_checkpointing)
+            flux.enable_gradient_checkpointing(cpu_offload=args.cpu_offload_checkpointing)
 
         flux.requires_grad_(True)
 
