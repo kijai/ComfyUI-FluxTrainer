@@ -276,7 +276,7 @@ class FluxTrainer:
         flux = flux_utils.load_flow_model(name, args.pretrained_model_name_or_path, weight_dtype, "cpu")
 
         if args.gradient_checkpointing:
-            flux.enable_gradient_checkpointing(args.cpu_offload_checkpointing)
+            flux.enable_gradient_checkpointing(cpu_offload=args.cpu_offload_checkpointing)
 
         flux.requires_grad_(True)
 
@@ -680,7 +680,7 @@ class FluxTrainer:
                     else:
                         with torch.no_grad():
                             # encode images to latents. images are [-1, 1]
-                            latents = ae.encode(batch["images"])
+                            latents = ae.encode(batch["images"].to(ae.dtype)).to(accelerator.device, dtype=weight_dtype)
 
                         # NaNが含まれていれば警告を表示し0に置き換える
                         if torch.any(torch.isnan(latents)):
