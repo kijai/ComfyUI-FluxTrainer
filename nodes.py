@@ -758,7 +758,9 @@ class FluxTrainSave:
 
             lora_path = os.path.join(trainer.args.output_dir, ckpt_name)
             if copy_to_comfy_lora_folder:
-                shutil.copy(lora_path, os.path.join(folder_paths.models_dir, "loras", "flux_trainer", ckpt_name))
+                destination_dir = os.path.join(folder_paths.models_dir, "loras", "flux_trainer")
+                os.makedirs(destination_dir, exist_ok=True)
+                shutil.copy(lora_path, os.path.join(destination_dir, ckpt_name))
         
             
         return (network_trainer, lora_path, global_step)
