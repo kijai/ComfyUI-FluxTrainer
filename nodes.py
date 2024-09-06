@@ -9,6 +9,8 @@ import toml
 import json
 import time
 import shutil
+import shlex
+
 from pathlib import Path
 script_directory = os.path.dirname(os.path.abspath(__file__))
 
@@ -340,7 +342,9 @@ class InitFluxLoRATraining:
 
         parser = train_network_setup_parser()
         if additional_args is not None:
-            args, _ = parser.parse_known_args(args=[additional_args])
+            print(f"additional_args: {additional_args}")
+            args, _ = parser.parse_known_args(args=shlex.split(additional_args))
+            print(args)
         else:
             args, _ = parser.parse_known_args()
         #print(args)
@@ -415,7 +419,12 @@ class InitFluxLoRATraining:
             True: {"split_mode": True, "network_args": ["train_blocks=single"]},
             False: {"split_mode": False, "network_args": ["train_blocks=all"]}
         }
-        config_dict.update(split_mode_settings.get(split_mode, {}))
+
+        selected_split_mode_settings = split_mode_settings.get(split_mode, {})
+        if 'network_args' in config_dict and isinstance(config_dict['network_args'], list):
+            config_dict['network_args'].extend(selected_split_mode_settings.pop('network_args', []))
+        else:
+            config_dict.update(selected_split_mode_settings)
 
         if "T5" in train_text_encoder:
             additional_network_args = ["train_t5xxl=True"]
