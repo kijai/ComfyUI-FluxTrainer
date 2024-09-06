@@ -715,7 +715,8 @@ class FluxTrainLoop:
             initial_global_step = network_trainer.global_step
 
             target_global_step = network_trainer.global_step + steps
-            #pbar = comfy.utils.ProgressBar(steps)
+            comfy_pbar = comfy.utils.ProgressBar(steps)
+            network_trainer.comfy_pbar = comfy_pbar
             while network_trainer.global_step < target_global_step:
                 steps_done = training_loop(
                     break_at_steps = target_global_step,
@@ -726,7 +727,7 @@ class FluxTrainLoop:
                 # Also break if the global steps have reached the max train steps
                 if network_trainer.global_step >= network_trainer.args.max_train_steps:
                     break
-
+            
             trainer = {
                 "network_trainer": network_trainer,
                 "training_loop": training_loop,
