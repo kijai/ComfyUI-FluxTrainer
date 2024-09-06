@@ -286,12 +286,8 @@ class InitFluxLoRATraining:
             "network_dim": ("INT", {"default": 4, "min": 1, "max": 256, "step": 1, "tooltip": "network dim"}),
             "network_alpha": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 256.0, "step": 0.01, "tooltip": "network alpha"}),
             "learning_rate": ("FLOAT", {"default": 4e-4, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "learning rate"}),
-            #"unet_lr": ("FLOAT", {"default": 1e-4, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "unet learning rate"}),
-            #"max_train_epochs": ("INT", {"default": 4, "min": 1, "max": 1000, "step": 1, "tooltip": "max number of training epochs"}),
             "max_train_steps": ("INT", {"default": 1500, "min": 1, "max": 100000, "step": 1, "tooltip": "max number of training steps"}),
-            #"text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
             "apply_t5_attn_mask": ("BOOLEAN", {"default": True, "tooltip": "apply t5 attention mask"}),
-            #"t5xxl_max_token_length": ("INT", {"default": 512, "min": 64, "max": 4096, "step": 8, "tooltip": "dev uses 512, schnell 256"}),
             "cache_latents": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "cache_text_encoder_outputs": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "split_mode": ("BOOLEAN", {"default": False, "tooltip": "[EXPERIMENTAL] use split mode for Flux model, network arg `train_blocks=single` is required"}),
@@ -316,6 +312,8 @@ class InitFluxLoRATraining:
                 "resume_args": ("ARGS", {"default": "", "tooltip": "resume args to pass to the training command"}),
                 "train_text_encoder": (['disabled', 'clip_l', 'clip_l_fp8', 'clip_l+T5', 'clip_l+T5_fp8'], {"default": 'disabled', "tooltip": "also train the selected text encoders using specified dtype, T5 can not be trained without clip_l"}),
                 "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
+                "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
+                "gradient_checkpointing": ("BOOLEAN", {"default": True, "tooltip": "use gradient checkpointing"}),
             },
         }
 
@@ -325,7 +323,8 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_text_encoder='disabled', **kwargs,):
+                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_text_encoder='disabled', 
+                      block_args=None, gradient_checkpointing=True, **kwargs,):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -344,7 +343,6 @@ class InitFluxLoRATraining:
         if additional_args is not None:
             print(f"additional_args: {additional_args}")
             args, _ = parser.parse_known_args(args=shlex.split(additional_args))
-            print(args)
         else:
             args, _ = parser.parse_known_args()
         #print(args)
@@ -391,7 +389,7 @@ class InitFluxLoRATraining:
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
-            "gradient_checkpointing": True,
+            #"gradient_checkpointing": True,
             "network_module": ".networks.lora_flux",
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
@@ -423,12 +421,17 @@ class InitFluxLoRATraining:
             additional_network_args.append("train_t5xxl=True")
         if split_mode:
             additional_network_args.append("train_blocks=single")
+        if block_args:
+            additional_network_args.append(block_args["include"])
         
         # Handle network_args in args Namespace
         if hasattr(args, 'network_args') and isinstance(args.network_args, list):
             args.network_args.extend(additional_network_args)
         else:
             setattr(args, 'network_args', additional_network_args)
+
+        if gradient_checkpointing:
+            config_dict["gradient_checkpointing"] = True
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
@@ -712,13 +715,13 @@ class FluxTrainLoop:
             initial_global_step = network_trainer.global_step
 
             target_global_step = network_trainer.global_step + steps
-            pbar = comfy.utils.ProgressBar(steps)
+            #pbar = comfy.utils.ProgressBar(steps)
             while network_trainer.global_step < target_global_step:
                 steps_done = training_loop(
                     break_at_steps = target_global_step,
                     epoch = network_trainer.current_epoch.value,
                 )
-                pbar.update(steps_done)
+                #pbar.update(steps_done)
                
                 # Also break if the global steps have reached the max train steps
                 if network_trainer.global_step >= network_trainer.args.max_train_steps:
@@ -879,6 +882,26 @@ class FluxTrainResume:
         }
             
         return (resume_args, )
+    
+class FluxTrainBlockSelect:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "include": ("STRING", {"default": "lora_unet_single_blocks_20_linear2", "multiline": True, "tooltip": "blocks to include in the LoRA network"}),
+             },
+        }
+
+    RETURN_TYPES = ("ARGS", )
+    RETURN_NAMES = ("block_args", )
+    FUNCTION = "block_select"
+    CATEGORY = "FluxTrainer"
+
+    def block_select(self, include):
+        block_args ={
+            "include": f"only_if_contains={include}",
+        }
+            
+        return (block_args, )
     
 class FluxTrainValidationSettings:
     @classmethod
@@ -1442,7 +1465,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainSaveModel": FluxTrainSaveModel,
     "ExtractFluxLoRA": ExtractFluxLoRA,
     "OptimizerConfigProdigy": OptimizerConfigProdigy,
-    "FluxTrainResume": FluxTrainResume
+    "FluxTrainResume": FluxTrainResume,
+    "FluxTrainBlockSelect": FluxTrainBlockSelect
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1463,5 +1487,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainSaveModel": "Flux Train Save Model",
     "ExtractFluxLoRA": "Extract Flux LoRA",
     "OptimizerConfigProdigy": "Optimizer Config Prodigy",
-    "FluxTrainResume": "Flux Train Resume"
+    "FluxTrainResume": "Flux Train Resume",
+    "FluxTrainBlockSelect": "Flux Train Block Select"
 }

@@ -1076,8 +1076,10 @@ class NetworkTrainer:
         self.remove_model = remove_model
         
         progress_bar = tqdm(range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps")
+        
         def training_loop(break_at_steps, epoch):
             steps_done = 0
+            comfy_bar = ProgressBar(break_at_steps - self.global_step)
             #accelerator.print(f"\nepoch {epoch+1}/{num_train_epochs}")
             progress_bar.set_description(f"Epoch {epoch + 1}/{num_train_epochs} - steps")
 
@@ -1233,6 +1235,7 @@ class NetworkTrainer:
                 if self.global_step >= break_at_steps:
                     break
                 steps_done += 1
+                comfy_bar.update(1)
 
             if args.logging_dir is not None:
                 logs = {"loss/epoch": self.loss_recorder.moving_average}
