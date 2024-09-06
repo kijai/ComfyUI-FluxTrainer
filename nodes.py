@@ -401,7 +401,8 @@ class InitFluxLoRATraining:
             "alpha_mask": dataset["alpha_mask"],
             "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
             "fp8_base_unet": False if "fp8" in train_text_encoder else True,
-            "disable_mmap_load_safetensors": False
+            "disable_mmap_load_safetensors": False,
+            "split_mode": split_mode,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
@@ -415,23 +416,19 @@ class InitFluxLoRATraining:
         }
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
 
-        split_mode_settings = {
-            True: {"split_mode": True, "network_args": ["train_blocks=single"]},
-            False: {"split_mode": False, "network_args": ["train_blocks=all"]}
-        }
-
-        selected_split_mode_settings = split_mode_settings.get(split_mode, {})
-        if 'network_args' in config_dict and isinstance(config_dict['network_args'], list):
-            config_dict['network_args'].extend(selected_split_mode_settings.pop('network_args', []))
-        else:
-            config_dict.update(selected_split_mode_settings)
-
+        #network args
+        additional_network_args = []
+        
         if "T5" in train_text_encoder:
-            additional_network_args = ["train_t5xxl=True"]
-            if 'network_args' in config_dict and isinstance(config_dict['network_args'], list):
-                config_dict['network_args'].extend(additional_network_args)
-            else:
-                config_dict['network_args'] = additional_network_args
+            additional_network_args.append("train_t5xxl=True")
+        if split_mode:
+            additional_network_args.append("train_blocks=single")
+        
+        # Handle network_args in args Namespace
+        if hasattr(args, 'network_args') and isinstance(args.network_args, list):
+            args.network_args.extend(additional_network_args)
+        else:
+            setattr(args, 'network_args', additional_network_args)
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
