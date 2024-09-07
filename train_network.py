@@ -555,11 +555,12 @@ class NetworkTrainer:
                 args.mixed_precision != "no"
             ), "fp8_base requires mixed precision='fp16' or 'bf16'"
             accelerator.print("enable fp8 training for U-Net.")
-            unet_weight_dtype = torch.float8_e4m3fn
+            unet_weight_dtype = torch.float8_e4m3fn if args.fp8_dtype == "e4m3" else torch.float8_e5m2
+            accelerator.print(f"unet_weight_dtype: {unet_weight_dtype}")
 
             if not args.fp8_base_unet and not args.network_train_unet_only:
                 accelerator.print("enable fp8 training for Text Encoder.")
-            te_weight_dtype = weight_dtype if args.fp8_base_unet else torch.float8_e4m3fn
+            te_weight_dtype = torch.float8_e4m3fn if args.fp8_dtype == "e4m3" else torch.float8_e5m2
 
             # unet.to(accelerator.device)  # this makes faster `to(dtype)` below, but consumes 23 GB VRAM
             # unet.to(dtype=unet_weight_dtype)  # without moving to gpu, this takes a lot of time and main memory

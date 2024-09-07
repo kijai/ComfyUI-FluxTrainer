@@ -3521,6 +3521,13 @@ def add_training_arguments(parser: argparse.ArgumentParser, support_dreambooth: 
         "--full_bf16", action="store_true", help="bf16 training including gradients / 勾配も含めてbf16で学習する"
     )  # TODO move to SDXL training, because it is not supported by SD1/2
     parser.add_argument("--fp8_base", action="store_true", help="use fp8 for base model / base modelにfp8を使う")
+    parser.add_argument(
+        "--fp8_dtype",
+        type=str,
+        default="e4m3",
+        choices=["e4m3", "e5m2"],
+        help="fp8 dtype selection",
+    )
 
     parser.add_argument(
         "--ddp_timeout",
@@ -4782,6 +4789,8 @@ def prepare_dtype(args: argparse.Namespace):
         save_dtype = torch.float32
     elif args.save_precision == "fp8_e4m3fn":
         save_dtype = torch.float8_e4m3fn
+    elif args.save_precision == "fp8_e5m2":
+        save_dtype = torch.float8_e5m2
 
     return weight_dtype, save_dtype
 

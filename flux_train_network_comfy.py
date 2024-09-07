@@ -65,10 +65,10 @@ class FluxNetworkTrainer(NetworkTrainer):
         )
         if args.fp8_base:
             # check dtype of model
-            if model.dtype == torch.float8_e4m3fnuz or model.dtype == torch.float8_e5m2 or model.dtype == torch.float8_e5m2fnuz:
+            if model.dtype == torch.float8_e4m3fnuz or model.dtype == torch.float8_e5m2fnuz:
                 raise ValueError(f"Unsupported fp8 model dtype: {model.dtype}")
-            elif model.dtype == torch.float8_e4m3fn:
-                logger.info("Loaded fp8 FLUX model")
+            elif model.dtype == torch.float8_e4m3fn or model.dtype == torch.float8_e5m2:
+                logger.info(f"Loaded {model.dtype} FLUX model")
 
         if args.split_mode:
             model = self.prepare_split_model(model, args, weight_dtype, accelerator)
@@ -115,7 +115,13 @@ class FluxNetworkTrainer(NetworkTrainer):
         flux_upper.load_state_dict(sd, strict=False, assign=True)
 
         logger.info("prepare upper model")
-        target_dtype = torch.float8_e4m3fn if args.fp8_base else weight_dtype
+        if args.fp8_base:
+            if args.fp8_dtype and args.fp8_dtype.lower() == "e5m2":
+                target_dtype = torch.float8_e5m2
+            else:
+                target_dtype = torch.float8_e4m3fn
+        else:
+            target_dtype =weight_dtype
         flux_upper.to(accelerator.device, dtype=target_dtype)
         flux_upper.eval()
 
