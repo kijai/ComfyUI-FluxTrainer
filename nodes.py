@@ -75,6 +75,9 @@ class TrainDatasetGeneralConfig:
             "caption_dropout_rate": ("FLOAT",{"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "tag dropout rate"}),
             "alpha_mask": ("BOOLEAN",{"default": False, "tooltip": "use alpha channel as mask for training"}),
             },
+            "optional": {
+                "seed": ("INT", {"default": 1, "min": 1, "max": 0xffffffffffffffff, "tooltip": "This is just a dummy seed widget that's not used anywhere, helpful to force dataset config refresh when queueing multiple training runs"}),
+            }
         }
 
     RETURN_TYPES = ("JSON",)
@@ -82,7 +85,7 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask):
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, seed=42):
         
         dataset = {
            "general": {
@@ -120,7 +123,6 @@ class TrainDatasetAdd:
             "num_repeats": ("INT", {"default": 1, "min": 1, "tooltip": "number of times to repeat dataset for an epoch"}),
             "min_bucket_reso": ("INT", {"default": 256, "min": 64, "max": 4096, "step": 8, "tooltip": "min bucket resolution"}),
             "max_bucket_reso": ("INT", {"default": 1024, "min": 64, "max": 4096, "step": 8, "tooltip": "max bucket resolution"}),
-  
             },
         }
 
