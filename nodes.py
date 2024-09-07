@@ -1116,8 +1116,7 @@ class FluxKohyaInferenceSampler:
         # AE
         ae = flux_utils.load_ae("dev", ae, ae_dtype, loading_device)
         ae.eval()
-        #if is_fp8(ae_dtype):
-        #    ae = accelerator.prepare(ae)
+
 
         # LoRA
         lora_models: List[lora_flux.LoRANetwork] = []
@@ -1159,7 +1158,7 @@ class FluxKohyaInferenceSampler:
                 clip_l.to(ae_dtype)
                 t5xxl.to(ae_dtype)
                 with accelerator.autocast():
-                    _, t5_out, txt_ids, t5_attn_mask = encoding_strategy.encode_tokens(
+                    l_pooled, t5_out, txt_ids, t5_attn_mask = encoding_strategy.encode_tokens(
                         tokenize_strategy, [clip_l, t5xxl], tokens_and_masks, apply_t5_attn_mask
                     )
             else:
@@ -1273,9 +1272,11 @@ class FluxKohyaInferenceSampler:
                         model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance, t5_attn_mask=t5_attn_mask
                     )
             else:
-                with torch.autocast(device_type=device.type, dtype=flux_dtype), torch.no_grad():
-                    x = denoise(
-                        model, img, img_ids, t5_out, txt_ids, l_pooled, timesteps=timesteps, guidance=guidance, t5_attn_mask=t5_attn_mask
+                with torch.autocast(device_type=device.type, dtype=flux_dtype):
+                    l_pooled, _, _, _ = encoding_strategy.encode_tokens(tokenize_strategy, [clip_l, None], tokens_and_masks)
+                with torch.autocast(device_type=device.type, dtype=flux_dtype):
+                    _, t5_out, txt_ids, t5_attn_mask = encoding_strategy.encode_tokens(
+                        tokenize_strategy, [None, t5xxl], tokens_and_masks, apply_t5_attn_mask
                     )
 
             return x
