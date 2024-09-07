@@ -66,6 +66,13 @@ class FluxTrainModelSelect:
         return (flux_models,)
 
 class TrainDatasetGeneralConfig:
+    queue_counter = 0
+    @classmethod
+    def IS_CHANGED(s, reset_on_queue=False, **kwargs):
+        if reset_on_queue:
+            s.queue_counter += 1
+        print(f"queue_counter: {s.queue_counter}")
+        return s.queue_counter
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -76,7 +83,7 @@ class TrainDatasetGeneralConfig:
             "alpha_mask": ("BOOLEAN",{"default": False, "tooltip": "use alpha channel as mask for training"}),
             },
             "optional": {
-                "seed": ("INT", {"default": 1, "min": 1, "max": 0xffffffffffffffff, "tooltip": "This is just a dummy seed widget that's not used anywhere, helpful to force dataset config refresh when queueing multiple training runs"}),
+                "reset_on_queue": ("BOOLEAN",{"default": False, "tooltip": "reset on queue"}),
             }
         }
 
@@ -85,7 +92,7 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, seed=42):
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, reset_on_queue=False):
         
         dataset = {
            "general": {
@@ -109,6 +116,7 @@ class TrainDatasetGeneralConfig:
 class TrainDatasetAdd:
     def __init__(self):
         self.previous_dataset_signature = None
+        
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
@@ -315,7 +323,7 @@ class InitFluxLoRATraining:
                 "train_text_encoder": (['disabled', 'clip_l', 'clip_l_fp8', 'clip_l+T5', 'clip_l+T5_fp8'], {"default": 'disabled', "tooltip": "also train the selected text encoders using specified dtype, T5 can not be trained without clip_l"}),
                 "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
                 "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
-                "gradient_checkpointing": ("BOOLEAN", {"default": True, "tooltip": "use gradient checkpointing"}),
+                "gradient_checkpointing": (["enabled", "enabled_with_cpu_offloading", "disabled"], {"default": "enabled", "tooltip": "use gradient checkpointing"}),
             },
         }
 
@@ -326,7 +334,7 @@ class InitFluxLoRATraining:
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_text_encoder='disabled', 
-                      block_args=None, gradient_checkpointing=True, **kwargs,):
+                      block_args=None, gradient_checkpointing="enabled", **kwargs,):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -391,7 +399,6 @@ class InitFluxLoRATraining:
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
-            #"gradient_checkpointing": True,
             "network_module": ".networks.lora_flux",
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
@@ -432,7 +439,11 @@ class InitFluxLoRATraining:
         else:
             setattr(args, 'network_args', additional_network_args)
 
-        if gradient_checkpointing:
+        if gradient_checkpointing == "disabled":
+            config_dict["gradient_checkpointing"] = False
+        elif gradient_checkpointing == "enabled_with_cpu_offloading":
+            config_dict["cpu_offload_checkpointing"] = True
+        else:
             config_dict["gradient_checkpointing"] = True
 
         config_dict.update(kwargs)
