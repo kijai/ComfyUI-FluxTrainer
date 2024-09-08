@@ -2829,6 +2829,53 @@
       ]
     },
     {
+      "id": 137,
+      "type": "TrainDatasetGeneralConfig",
+      "pos": {
+        "0": -1122,
+        "1": 203
+      },
+      "size": [
+        316.326628330723,
+        184.85814244742187
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "reg_data_dir",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "reg_data_dir"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "dataset_general",
+          "type": "JSON",
+          "links": [
+            239
+          ],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TrainDatasetGeneralConfig"
+      },
+      "widgets_values": [
+        false,
+        false,
+        false,
+        0,
+        false,
+        false,
+        ""
+      ]
+    },
+    {
       "id": 107,
       "type": "InitFluxLoRATraining",
       "pos": {
@@ -2933,56 +2980,9 @@
         "sdpa",
         "",
         "",
-        "clip_l",
-        0.00028000000000000003,
-        "enabled"
-      ]
-    },
-    {
-      "id": 137,
-      "type": "TrainDatasetGeneralConfig",
-      "pos": {
-        "0": -1122,
-        "1": 213
-      },
-      "size": [
-        316.326628330723,
-        184.85814244742187
-      ],
-      "flags": {},
-      "order": 16,
-      "mode": 0,
-      "inputs": [
-        {
-          "name": "reg_data_dir",
-          "type": "STRING",
-          "link": null,
-          "widget": {
-            "name": "reg_data_dir"
-          }
-        }
-      ],
-      "outputs": [
-        {
-          "name": "dataset_general",
-          "type": "JSON",
-          "links": [
-            239
-          ],
-          "shape": 3
-        }
-      ],
-      "properties": {
-        "Node name for S&R": "TrainDatasetGeneralConfig"
-      },
-      "widgets_values": [
-        false,
-        false,
-        false,
+        "disabled",
         0,
-        false,
-        false,
-        ""
+        "enabled"
       ]
     }
   ],
@@ -3609,10 +3609,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.8264462809917358,
+      "scale": 0.751314800901578,
       "offset": [
-        1204.1667173113667,
-        156.88904505257798
+        762.1940777239663,
+        226.3834867029684
       ]
     }
   },
