@@ -47,10 +47,6 @@ class FluxNetworkTrainer(NetworkTrainer):
             "split_mode and cpu_offload_checkpointing cannot be used together"
         )
 
-        assert not args.split_mode or not args.cpu_offload_checkpointing, (
-            "split_mode and cpu_offload_checkpointing cannot be used together"
-        )
-
         train_dataset_group.verify_bucket_reso_steps(32)  # TODO check this
 
     def get_flux_model_name(self, args):
