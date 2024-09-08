@@ -988,11 +988,7 @@ class FluxTrainValidate:
             validation_settings
         )
 
-        split_mode = getattr(network_trainer.args, 'split_mode', False)
-        if split_mode:
-            image_tensors = network_trainer.sample_images_split_mode(*params)
-        else:
-            image_tensors = flux_train_utils.sample_images(*params)
+        image_tensors = network_trainer.sample_images(*params)
 
         trainer = {
             "network_trainer": network_trainer,

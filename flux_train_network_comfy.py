@@ -283,8 +283,15 @@ class FluxNetworkTrainer(NetworkTrainer):
             text_encoders[0].to(accelerator.device, dtype=weight_dtype)
             text_encoders[1].to(accelerator.device)
 
-    def sample_images_split_mode(self, accelerator, args, epoch, global_step, flux, ae, text_encoder, sample_prompts_te_outputs, validation_settings):
-       
+    def sample_images(self, accelerator, args, epoch, global_step, flux, ae, text_encoder, sample_prompts_te_outputs, validation_settings):
+        text_encoders = text_encoder  # for compatibility
+        text_encoders = self.get_models_for_text_encoding(args, accelerator, text_encoders)
+        if not args.split_mode:
+            image_tensors = flux_train_utils.sample_images(
+            accelerator, args, epoch, global_step, flux, ae, text_encoders, sample_prompts_te_outputs, validation_settings)
+            clean_memory_on_device(accelerator.device)
+            return image_tensors
+        
         class FluxUpperLowerWrapper(torch.nn.Module):
             def __init__(self, flux_upper: flux_models.FluxUpper, flux_lower: flux_models.FluxLower, device: torch.device):
                 super().__init__()
@@ -305,7 +312,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         wrapper = FluxUpperLowerWrapper(self.flux_upper, flux, accelerator.device)
         clean_memory_on_device(accelerator.device)
         image_tensors = flux_train_utils.sample_images(
-            accelerator, args, epoch, global_step, wrapper, ae, text_encoder, sample_prompts_te_outputs, validation_settings
+            accelerator, args, epoch, global_step, wrapper, ae, text_encoders, sample_prompts_te_outputs, validation_settings
         )
         clean_memory_on_device(accelerator.device)
         return image_tensors
