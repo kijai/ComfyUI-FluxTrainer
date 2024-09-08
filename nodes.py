@@ -83,7 +83,7 @@ class TrainDatasetGeneralConfig:
             "alpha_mask": ("BOOLEAN",{"default": False, "tooltip": "use alpha channel as mask for training"}),
             },
             "optional": {
-                "reset_on_queue": ("BOOLEAN",{"default": False, "tooltip": "reset on queue"}),
+                "reset_on_queue": ("BOOLEAN",{"default": False, "tooltip": "Force refresh of everything for cleaner queueing"}),
             }
         }
 
@@ -209,7 +209,7 @@ class OptimizerConfig:
 
     def create_config(self, min_snr_gamma, extra_optimizer_args, **kwargs):
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
-        kwargs["optimizer_args"] = [arg.strip() for arg in extra_optimizer_args.strip().split(',') if arg.strip()]
+        kwargs["optimizer_args"] = [arg.strip() for arg in extra_optimizer_args.strip().split('|') if arg.strip()]
         return (kwargs,)
 
 class OptimizerConfigAdafactor:
@@ -237,7 +237,7 @@ class OptimizerConfigAdafactor:
 
     def create_config(self, relative_step, scale_parameter, warmup_init, clip_threshold, min_snr_gamma, extra_optimizer_args, **kwargs):
         kwargs["optimizer_type"] = "adafactor"
-        extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split(',') if arg.strip()]
+        extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split('|') if arg.strip()]
         node_args = [
                 f"relative_step={relative_step}",
                 f"scale_parameter={scale_parameter}",
