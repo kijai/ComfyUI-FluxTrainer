@@ -52,7 +52,7 @@ class FluxTrainModelSelect:
     FUNCTION = "loadmodel"
     CATEGORY = "FluxTrainer"
 
-    def loadmodel(self, transformer, vae, clip_l, t5, lora_path=None):
+    def loadmodel(self, transformer, vae, clip_l, t5, lora_path=""):
         
         transformer_path = folder_paths.get_full_path("unet", transformer)
         vae_path = folder_paths.get_full_path("vae", vae)
@@ -64,7 +64,7 @@ class FluxTrainModelSelect:
             "vae": vae_path,
             "clip_l": clip_path,
             "t5": t5_path,
-            "lora_path": lora_path if lora_path is not None else None
+            "lora_path": lora_path
         }
         
         return (flux_models,)
@@ -88,6 +88,7 @@ class TrainDatasetGeneralConfig:
             },
             "optional": {
                 "reset_on_queue": ("BOOLEAN",{"default": False, "tooltip": "Force refresh of everything for cleaner queueing"}),
+                "reg_data_dir": ("STRING",{"multiline": True, "forceInput": True, "default": "", "tooltip": "reg data dir"}),
             }
         }
 
@@ -96,7 +97,7 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, reset_on_queue=False):
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, reset_on_queue=False, reg_data_dir=""):
         
         dataset = {
            "general": {
@@ -113,7 +114,8 @@ class TrainDatasetGeneralConfig:
         #print(dataset_json)
         dataset_config = {
             "datasets": dataset_json,
-            "alpha_mask": alpha_mask
+            "alpha_mask": alpha_mask,
+            "reg_data_dir": reg_data_dir
         }
         return (dataset_config,)
 
@@ -325,7 +327,7 @@ class InitFluxLoRATraining:
                 "additional_args": ("STRING", {"multiline": True, "default": "", "tooltip": "additional args to pass to the training command"}),
                 "resume_args": ("ARGS", {"default": "", "tooltip": "resume args to pass to the training command"}),
                 "train_text_encoder": (['disabled', 'clip_l', 'clip_l_fp8', 'clip_l+T5', 'clip_l+T5_fp8'], {"default": 'disabled', "tooltip": "also train the selected text encoders using specified dtype, T5 can not be trained without clip_l"}),
-                "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.00001, "tooltip": "text encoder learning rate"}),
+                "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "text encoder learning rate"}),
                 "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
                 "gradient_checkpointing": (["enabled", "enabled_with_cpu_offloading", "disabled"], {"default": "enabled", "tooltip": "use gradient checkpointing"}),
             },
@@ -452,6 +454,9 @@ class InitFluxLoRATraining:
 
         if flux_models["lora_path"]:
             config_dict["network_weights"] = flux_models["lora_path"]
+
+        if dataset["reg_data_dir"]:
+            config_dict["reg_data_dir"] = dataset["reg_data_dir"]
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
