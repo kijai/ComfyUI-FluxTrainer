@@ -50,6 +50,15 @@ def load_flow_model(
     # load_sft doesn't support torch.device
     logger.info(f"Loading state dict from {ckpt_path}")
     sd = load_safetensors(ckpt_path, device=str(device), disable_mmap=disable_mmap, dtype=dtype)
+
+     # Check the first key to see if it contains the prefix
+    first_key = next(iter(sd))
+    if first_key.startswith("model.diffusion_model."):
+        # Remove the 'model.diffusion_model.' prefix from keys if it exists
+        sd = {
+            key.replace("model.diffusion_model.", ""): value
+            for key, value in sd.items()
+        }
     info = model.load_state_dict(sd, strict=False, assign=True)
     logger.info(f"Loaded Flux: {info}")
     return model
