@@ -570,7 +570,8 @@ class InitFluxTraining:
         if free <= required_free_space:
             raise ValueError(f"Most likely insufficient disk space to complete training. Required: {required_free_space/2**30}GB. Available: {free/2**30}GB")
 
-        dataset_toml = toml.dumps(json.loads(dataset))
+        dataset_config = dataset["datasets"]
+        dataset_toml = toml.dumps(json.loads(dataset_config))
         
         parser = train_setup_parser()
         if additional_args is not None:
