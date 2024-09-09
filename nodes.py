@@ -391,7 +391,6 @@ class InitFluxLoRATraining:
             args, _ = parser.parse_known_args(args=shlex.split(additional_args))
         else:
             args, _ = parser.parse_known_args()
-        #print(args)
 
         if kwargs.get("cache_latents") == "memory":
             kwargs["cache_latents"] = True
@@ -575,7 +574,8 @@ class InitFluxTraining:
         
         parser = train_setup_parser()
         if additional_args is not None:
-            args, _ = parser.parse_known_args(args=[additional_args])
+            print(f"additional_args: {additional_args}")
+            args, _ = parser.parse_known_args(args=shlex.split(additional_args))
         else:
             args, _ = parser.parse_known_args()
 
