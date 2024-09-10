@@ -357,7 +357,8 @@ class InitFluxLoRATraining:
                 "additional_args": ("STRING", {"multiline": True, "default": "", "tooltip": "additional args to pass to the training command"}),
                 "resume_args": ("ARGS", {"default": "", "tooltip": "resume args to pass to the training command"}),
                 "train_text_encoder": (['disabled', 'clip_l', 'clip_l_fp8', 'clip_l+T5', 'clip_l+T5_fp8'], {"default": 'disabled', "tooltip": "also train the selected text encoders using specified dtype, T5 can not be trained without clip_l"}),
-                "text_encoder_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "text encoder learning rate"}),
+                "clip_l_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "text encoder learning rate"}),
+                "T5_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "text encoder learning rate"}),
                 "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
                 "gradient_checkpointing": (["enabled", "enabled_with_cpu_offloading", "disabled"], {"default": "enabled", "tooltip": "use gradient checkpointing"}),
             },
@@ -373,7 +374,7 @@ class InitFluxLoRATraining:
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_text_encoder='disabled', 
-                      block_args=None, gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, **kwargs,):
+                      block_args=None, gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, T5_lr=0, **kwargs,):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -441,7 +442,6 @@ class InitFluxLoRATraining:
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
-            "text_encoder_lr": 0,
             "t5xxl_max_token_length": 512,
             "alpha_mask": dataset["alpha_mask"],
             "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
@@ -460,6 +460,12 @@ class InitFluxLoRATraining:
             "bf16": {"full_bf16": True, "full_fp16": False, "mixed_precision": "bf16"}
         }
         config_dict.update(gradient_dtype_settings.get(gradient_dtype, {}))
+
+        if train_text_encoder != 'disabled':
+            if T5_lr != "NaN":
+                config_dict["text_encoder_lr"] = clip_l_lr
+            if T5_lr != "NaN":
+                config_dict["text_encoder_lr"] = [clip_l_lr, T5_lr]
 
         #network args
         additional_network_args = []
