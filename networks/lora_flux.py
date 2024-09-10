@@ -604,7 +604,7 @@ class LoRANetwork(torch.nn.Module):
         self.unet_loras: List[Union[LoRAModule, LoRAInfModule]]
         self.unet_loras, skipped_un = create_modules(True, None, unet, target_replace_modules)
         logger.info(f"create LoRA for FLUX {self.train_blocks} blocks: {len(self.unet_loras)} modules.")
-        print(self.unet_loras)
+        #print(self.unet_loras)
 
         skipped = skipped_te + skipped_un
         if varbose and len(skipped) > 0:
