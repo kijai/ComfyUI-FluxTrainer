@@ -830,7 +830,7 @@
       },
       "size": {
         "0": 281.5897521972656,
-        "1": 318
+        "1": 338
       },
       "flags": {},
       "order": 20,
@@ -840,6 +840,11 @@
           "name": "dataset_config",
           "type": "JSON",
           "link": 239
+        },
+        {
+          "name": "regularization",
+          "type": "JSON",
+          "link": null
         }
       ],
       "outputs": [
@@ -878,7 +883,7 @@
       },
       "size": {
         "0": 267.5897521972656,
-        "1": 318
+        "1": 338
       },
       "flags": {},
       "order": 22,
@@ -888,6 +893,11 @@
           "name": "dataset_config",
           "type": "JSON",
           "link": 187
+        },
+        {
+          "name": "regularization",
+          "type": "JSON",
+          "link": null
         }
       ],
       "outputs": [
@@ -926,7 +936,7 @@
       },
       "size": {
         "0": 259.5897521972656,
-        "1": 318
+        "1": 338
       },
       "flags": {},
       "order": 23,
@@ -936,6 +946,11 @@
           "name": "dataset_config",
           "type": "JSON",
           "link": 188
+        },
+        {
+          "name": "regularization",
+          "type": "JSON",
+          "link": null
         }
       ],
       "outputs": [
@@ -2835,23 +2850,14 @@
         "0": -1122,
         "1": 203
       },
-      "size": [
-        316.326628330723,
-        184.85814244742187
-      ],
+      "size": {
+        "0": 316.3266296386719,
+        "1": 184.85813903808594
+      },
       "flags": {},
       "order": 16,
       "mode": 0,
-      "inputs": [
-        {
-          "name": "reg_data_dir",
-          "type": "STRING",
-          "link": null,
-          "widget": {
-            "name": "reg_data_dir"
-          }
-        }
-      ],
+      "inputs": [],
       "outputs": [
         {
           "name": "dataset_general",
@@ -2871,8 +2877,7 @@
         false,
         0,
         false,
-        false,
-        ""
+        false
       ]
     },
     {
@@ -2981,6 +2986,7 @@
         "",
         "",
         "disabled",
+        0,
         0,
         "enabled"
       ]
@@ -3534,47 +3540,11 @@
   ],
   "groups": [
     {
-      "title": "Dataset",
+      "title": "Train_01",
       "bounding": [
-        -1190,
-        -151,
-        1362,
-        851
-      ],
-      "color": "#3f789e",
-      "font_size": 24,
-      "flags": {}
-    },
-    {
-      "title": "Train_04",
-      "bounding": [
-        4753,
-        127,
-        996,
-        989
-      ],
-      "color": "#3f789e",
-      "font_size": 24,
-      "flags": {}
-    },
-    {
-      "title": "Train_03",
-      "bounding": [
-        3681,
-        128,
-        1047,
-        986
-      ],
-      "color": "#3f789e",
-      "font_size": 24,
-      "flags": {}
-    },
-    {
-      "title": "Train_02",
-      "bounding": [
-        2602,
-        124,
-        1046,
+        1439,
+        120,
+        1107,
         975
       ],
       "color": "#3f789e",
@@ -3594,12 +3564,48 @@
       "flags": {}
     },
     {
-      "title": "Train_01",
+      "title": "Train_02",
       "bounding": [
-        1439,
-        120,
-        1107,
+        2602,
+        124,
+        1046,
         975
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "Train_03",
+      "bounding": [
+        3681,
+        128,
+        1047,
+        986
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "Train_04",
+      "bounding": [
+        4753,
+        127,
+        996,
+        989
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "title": "Dataset",
+      "bounding": [
+        -1190,
+        -151,
+        1362,
+        851
       ],
       "color": "#3f789e",
       "font_size": 24,
@@ -3609,10 +3615,10 @@
   "config": {},
   "extra": {
     "ds": {
-      "scale": 0.751314800901578,
+      "scale": 0.6830134553650705,
       "offset": [
-        762.1940777239663,
-        226.3834867029684
+        1162.5041448258619,
+        54.39509897809583
       ]
     }
   },
