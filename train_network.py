@@ -1097,8 +1097,8 @@ class NetworkTrainer:
 
             skipped_dataloader = None
             if self.initial_step > 0:
-                skipped_dataloader = accelerator.skip_first_batches(train_dataloader, initial_step)
-                initial_step = 0
+                skipped_dataloader = accelerator.skip_first_batches(train_dataloader, self.initial_step)
+                self.initial_step = 0
 
             for step, batch in enumerate(skipped_dataloader or train_dataloader):
                 current_step.value = self.global_step
