@@ -1784,6 +1784,8 @@ class DreamBoothDataset(BaseDataset):
 
             self.set_tag_frequency(os.path.basename(subset.image_dir), captions)  # タグ頻度を記録
 
+            logger.info(f"Found captions for {len(captions) - len(missing_captions)} images.")
+            
             if missing_captions:
                 number_of_missing_captions = len(missing_captions)
                 number_of_missing_captions_to_show = 5

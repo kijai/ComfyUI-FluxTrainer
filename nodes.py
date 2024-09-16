@@ -88,6 +88,7 @@ class TrainDatasetGeneralConfig:
             },
             "optional": {
                 "reset_on_queue": ("BOOLEAN",{"default": False, "tooltip": "Force refresh of everything for cleaner queueing"}),
+                "caption_extension": ("STRING",{"default": ".txt", "tooltip": "extension for caption files"}),
             }
         }
 
@@ -96,12 +97,12 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, reset_on_queue=False):
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, reset_on_queue=False, caption_extension=".txt"):
         
         dataset = {
            "general": {
                 "shuffle_caption": shuffle_caption,
-                "caption_extension": ".txt",
+                "caption_extension": caption_extension,
                 "keep_tokens_separator": "|||",
                 "caption_dropout_rate": caption_dropout_rate,
                 "color_aug": color_aug,
