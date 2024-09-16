@@ -973,34 +973,43 @@ class FluxTrainBlockSelect:
 
     def block_select(self, include):
         import re
+    
         # Split the input string by commas to handle multiple ranges/blocks
         elements = include.split(',')
-
+    
         # Initialize a list to collect block names
         blocks = []
-
+    
         # Pattern to find ranges like (10-20)
         pattern = re.compile(r'\((\d+)-(\d+)\)')
-
+    
+        # Extract the prefix and suffix from the first element
+        prefix_suffix_pattern = re.compile(r'(.*)_blocks_(.*)')
+    
         for element in elements:
             element = element.strip()
-            matches = pattern.findall(element)
-
-            if matches:
-                for start, end in matches:
-                    # Generate block names for the range and add them to the list
-                    blocks.extend([f"lora_unet_single_blocks_{i}_linear2" for i in range(int(start), int(end) + 1)])
+            match = prefix_suffix_pattern.match(element)
+            if match:
+                prefix = match.group(1) + "_blocks_"
+                suffix = match.group(2)
+                matches = pattern.findall(suffix)
+                if matches:
+                    for start, end in matches:
+                        # Generate block names for the range and add them to the list
+                        blocks.extend([f"{prefix}{i}{suffix.replace(f'({start}-{end})', '', 1)}" for i in range(int(start), int(end) + 1)])
+                else:
+                    # If no range is found, add the block name directly
+                    blocks.append(element)
             else:
-                # If no range is found, add the block name directly
                 blocks.append(element)
-
+    
         # Construct the `include` string
         include_string = ','.join(blocks)
-
+    
         block_args = {
             "include": f"only_if_contains={include_string}",
         }
-
+    
         return (block_args, )
     
 class FluxTrainValidationSettings:
