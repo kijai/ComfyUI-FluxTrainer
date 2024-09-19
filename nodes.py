@@ -228,7 +228,7 @@ class OptimizerConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "optimizer_type": (["adamw8bit", "adamw","prodigy", "CAME", "Lion8bit", "Lion"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
+            "optimizer_type": (["adamw8bit", "adamw","prodigy", "CAME", "Lion8bit", "Lion", "adamwschedulefree", "sgdschedulefree"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
             "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
             "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup"], {"default": "constant", "tooltip": "learning rate scheduler"}),
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
@@ -295,7 +295,7 @@ class OptimizerConfigProdigy:
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
             "lr_scheduler_num_cycles": ("INT",{"default": 1, "min": 1, "tooltip": "learning rate scheduler num cycles"}),
             "lr_scheduler_power": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "learning rate scheduler power"}),
-            "weight_decay": ("FLOAT",{"default": 0.0, "tooltip": "weight decay (L2 penalty)"}),
+            "weight_decay": ("FLOAT",{"default": 0.0, "step": 0.0001, "tooltip": "weight decay (L2 penalty)"}),
             "decouple": ("BOOLEAN",{"default": True, "tooltip": "use AdamW style weight decay"}),
             "use_bias_correction": ("BOOLEAN",{"default": False, "tooltip": "turn on Adam's bias correction"}),
             "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
@@ -791,6 +791,9 @@ class FluxTrainLoop:
             target_global_step = network_trainer.global_step + steps
             comfy_pbar = comfy.utils.ProgressBar(steps)
             network_trainer.comfy_pbar = comfy_pbar
+
+            network_trainer.optimizer_train_fn()
+
             while network_trainer.global_step < target_global_step:
                 steps_done = training_loop(
                     break_at_steps = target_global_step,
@@ -869,6 +872,8 @@ class FluxTrainSaveModel:
         with torch.inference_mode(False):
             trainer = network_trainer["network_trainer"]
             global_step = trainer.global_step
+
+            trainer.optimizer_eval_fn()
             
             ckpt_name = train_util.get_step_ckpt_name(trainer.args, "." + trainer.args.save_model_as, global_step)
             flux_train_utils.save_flux_model_on_epoch_end_or_stepwise(
@@ -916,6 +921,7 @@ class FluxTrainEnd:
             network = network_trainer.accelerator.unwrap_model(network_trainer.network)
 
             network_trainer.accelerator.end_training()
+            network_trainer.optimizer_eval_fn()
 
             if save_state:
                 train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
@@ -1070,7 +1076,7 @@ class FluxTrainValidate:
             network_trainer.sample_prompts_te_outputs,
             validation_settings
         )
-
+        network_trainer.optimizer_eval_fn()
         image_tensors = network_trainer.sample_images(*params)
 
         trainer = {

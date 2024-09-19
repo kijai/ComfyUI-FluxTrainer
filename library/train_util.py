@@ -13,6 +13,7 @@ import shutil
 import time
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     NamedTuple,
@@ -2417,7 +2418,7 @@ def is_disk_cached_latents_is_expected(reso, npz_path: str, flip_aug: bool, alph
         if alpha_mask:
             if "alpha_mask" not in npz:
                 return False
-            if npz["alpha_mask"].shape[0:2] != reso:  # HxW
+            if (npz["alpha_mask"].shape[1], npz["alpha_mask"].shape[0]) != reso: # HxW => WxH != reso
                 return False
         else:
             if "alpha_mask" in npz:
@@ -4561,6 +4562,23 @@ def get_optimizer(args, trainable_params):
         optimizer_class = torch.optim.AdamW
         optimizer = optimizer_class(trainable_params, lr=lr, **optimizer_kwargs)
 
+    elif optimizer_type.endswith("schedulefree".lower()):
+        try:
+            import schedulefree as sf
+        except ImportError:
+            raise ImportError("No schedulefree / schedulefreeがインストールされていないようです")
+        if optimizer_type == "AdamWScheduleFree".lower():
+            optimizer_class = sf.AdamWScheduleFree
+            logger.info(f"use AdamWScheduleFree optimizer | {optimizer_kwargs}")
+        elif optimizer_type == "SGDScheduleFree".lower():
+            optimizer_class = sf.SGDScheduleFree
+            logger.info(f"use SGDScheduleFree optimizer | {optimizer_kwargs}")
+        else:
+            raise ValueError(f"Unknown optimizer type: {optimizer_type}")
+        optimizer = optimizer_class(trainable_params, lr=lr, **optimizer_kwargs)
+        # make optimizer as train mode: we don't need to call train again, because eval will not be called in training loop
+        optimizer.train()
+
     elif optimizer_type == "CAME".lower():
         logger.info(f"use CAME optimizer | {optimizer_kwargs}")
         try:
@@ -4577,16 +4595,16 @@ def get_optimizer(args, trainable_params):
 
     if optimizer is None:
         # 任意のoptimizerを使う
-        optimizer_type = args.optimizer_type  # lowerでないやつ（微妙）
-        logger.info(f"use {optimizer_type} | {optimizer_kwargs}")
-        if "." not in optimizer_type:
+        case_sensitive_optimizer_type = args.optimizer_type  # not lower
+        logger.info(f"use {case_sensitive_optimizer_type} | {optimizer_kwargs}")
+        if "." not in case_sensitive_optimizer_type:  # from torch.optim
             optimizer_module = torch.optim
-        else:
-            values = optimizer_type.split(".")
+        else:  # from other library
+            values = case_sensitive_optimizer_type.split(".")
             optimizer_module = importlib.import_module(".".join(values[:-1]))
-            optimizer_type = values[-1]
+            case_sensitive_optimizer_type = values[-1]
 
-        optimizer_class = getattr(optimizer_module, optimizer_type)
+        optimizer_class = getattr(optimizer_module, case_sensitive_optimizer_type)
         optimizer = optimizer_class(trainable_params, lr=lr, **optimizer_kwargs)
 
     optimizer_name = optimizer_class.__module__ + "." + optimizer_class.__name__
@@ -4594,6 +4612,30 @@ def get_optimizer(args, trainable_params):
 
     return optimizer_name, optimizer_args, optimizer
 
+def get_optimizer_train_eval_fn(optimizer: Optimizer, args: argparse.Namespace) -> Tuple[Callable, Callable]:
+    if not is_schedulefree_optimizer(optimizer, args):
+        # return dummy func
+        return lambda: None, lambda: None
+    # get train and eval functions from optimizer
+    train_fn = optimizer.train
+    eval_fn = optimizer.eval
+    return train_fn, eval_fn
+
+def is_schedulefree_optimizer(optimizer: Optimizer, args: argparse.Namespace) -> bool:
+    return args.optimizer_type.lower().endswith("schedulefree".lower())  # or args.optimizer_schedulefree_wrapper
+
+def get_dummy_scheduler(optimizer: Optimizer) -> Any:
+    # dummy scheduler for schedulefree optimizer. supports only empty step(), get_last_lr() and optimizers.
+    # this scheduler is used for logging only.
+    # this isn't be wrapped by accelerator because of this class is not a subclass of torch.optim.lr_scheduler._LRScheduler
+    class DummyScheduler:
+        def __init__(self, optimizer: Optimizer):
+            self.optimizer = optimizer
+        def step(self):
+            pass
+        def get_last_lr(self):
+            return [group["lr"] for group in self.optimizer.param_groups]
+    return DummyScheduler(optimizer)
 
 # Modified version of get_scheduler() function from diffusers.optimizer.get_scheduler
 # Add some checking and features to the original function.
@@ -4603,6 +4645,9 @@ def get_scheduler_fix(args, optimizer: Optimizer, num_processes: int):
     """
     Unified API to get any scheduler from its name.
     """
+    # if schedulefree optimizer, return dummy scheduler
+    if is_schedulefree_optimizer(optimizer, args):
+        return get_dummy_scheduler(optimizer)
     name = args.lr_scheduler
     num_warmup_steps: Optional[int] = args.lr_warmup_steps
     num_training_steps = args.max_train_steps * num_processes  # * args.gradient_accumulation_steps

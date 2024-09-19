@@ -504,6 +504,7 @@ class NetworkTrainer:
         #         accelerator.print(f"trainable_params: {k} = {v}")
 
         optimizer_name, optimizer_args, optimizer = train_util.get_optimizer(args, trainable_params)
+        self.optimizer_train_fn, self.optimizer_eval_fn = train_util.get_optimizer_train_eval_fn(optimizer, args)
 
         # prepare dataloader
         # strategies are set here because they cannot be referenced in another process. Copy them with the dataset

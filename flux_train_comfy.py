@@ -362,8 +362,14 @@ class FluxTrainer:
 
             logger.info(f"using {len(optimizers)} optimizers for blockwise fused optimizers")
 
+            if train_util.is_schedulefree_optimizer(optimizers[0], args):
+                raise ValueError("Schedule-free optimizer is not supported with blockwise fused optimizers")
+            self.optimizer_train_fn = lambda: None  # dummy function
+            self.optimizer_eval_fn = lambda: None  # dummy function
+
         else:
             _, _, optimizer = train_util.get_optimizer(args, trainable_params=params_to_optimize)
+            self.optimizer_train_fn, self.optimizer_eval_fn = train_util.get_optimizer_train_eval_fn(optimizer, args)
 
         # prepare dataloader
         # strategies are set here because they cannot be referenced in another process. Copy them with the dataset
@@ -783,6 +789,7 @@ class FluxTrainer:
                 if accelerator.sync_gradients:
                     progress_bar.update(1)
                     self.global_step += 1
+                    
 
                     # flux_train_utils.sample_images(
                     #     accelerator, args, None, global_step, flux, ae, [clip_l, t5xxl], sample_prompts_te_outputs
