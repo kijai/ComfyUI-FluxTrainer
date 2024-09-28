@@ -811,6 +811,86 @@ class FluxTrainLoop:
             }
         return (trainer, network_trainer.global_step)
 
+class FluxTrainAndValidateLoop:
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {"required": {
+            "network_trainer": ("NETWORKTRAINER",),
+            "validate_at_steps": ("INT", {"default": 250, "min": 1, "max": 10000, "step": 1, "tooltip": "the step point in training to validate/save"}),
+            "save_at_steps": ("INT", {"default": 250, "min": 1, "max": 10000, "step": 1, "tooltip": "the step point in training to validate/save"}),
+            },
+             "optional": {
+                "validation_settings": ("VALSETTINGS",),
+            }
+        }
+
+    RETURN_TYPES = ("NETWORKTRAINER", "INT",)
+    RETURN_NAMES = ("network_trainer", "steps",)
+    FUNCTION = "train"
+    CATEGORY = "FluxTrainer"
+
+    def train(self, network_trainer, validate_at_steps, save_at_steps, validation_settings=None):
+        with torch.inference_mode(False):
+            training_loop = network_trainer["training_loop"]
+            network_trainer = network_trainer["network_trainer"]
+
+            target_global_step = network_trainer.args.max_train_steps
+            comfy_pbar = comfy.utils.ProgressBar(target_global_step)
+            network_trainer.comfy_pbar = comfy_pbar
+
+            network_trainer.optimizer_train_fn()
+
+            while network_trainer.global_step < target_global_step:
+                next_validate_step = ((network_trainer.global_step // validate_at_steps) + 1) * validate_at_steps
+                next_save_step = ((network_trainer.global_step // save_at_steps) + 1) * save_at_steps
+
+                steps_done = training_loop(
+                    break_at_steps=min(next_validate_step, next_save_step),
+                    epoch=network_trainer.current_epoch.value,
+                )
+
+                # Check if we need to validate
+                if network_trainer.global_step % validate_at_steps == 0:
+                    self.validate(network_trainer, validation_settings)
+
+                # Check if we need to save
+                if network_trainer.global_step % save_at_steps == 0:
+                    self.save(network_trainer)
+
+                # Also break if the global steps have reached the max train steps
+                if network_trainer.global_step >= network_trainer.args.max_train_steps:
+                    break
+
+            trainer = {
+                "network_trainer": network_trainer,
+                "training_loop": training_loop,
+            }
+        return (trainer, network_trainer.global_step)
+
+    def validate(self, network_trainer, validation_settings=None):
+        params = (
+            network_trainer.accelerator, 
+            network_trainer.args, 
+            network_trainer.current_epoch.value, 
+            network_trainer.global_step,
+            network_trainer.unet,
+            network_trainer.vae,
+            network_trainer.text_encoder,
+            network_trainer.sample_prompts_te_outputs,
+            validation_settings
+        )
+        network_trainer.optimizer_eval_fn()
+        image_tensors = network_trainer.sample_images(*params)
+        network_trainer.optimizer_train_fn()
+        print("Validating at step:", network_trainer.global_step)
+
+    def save(self, network_trainer):
+        ckpt_name = train_util.get_step_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, network_trainer.global_step)
+        network_trainer.optimizer_eval_fn()
+        network_trainer.save_model(ckpt_name, network_trainer.accelerator.unwrap_model(network_trainer.network), network_trainer.global_step, network_trainer.current_epoch.value + 1)
+        network_trainer.optimizer_train_fn()
+        print("Saving at step:", network_trainer.global_step)
+
 class FluxTrainSave:
     @classmethod
     def INPUT_TYPES(s):
@@ -1581,7 +1661,8 @@ NODE_CLASS_MAPPINGS = {
     "OptimizerConfigProdigy": OptimizerConfigProdigy,
     "FluxTrainResume": FluxTrainResume,
     "FluxTrainBlockSelect": FluxTrainBlockSelect,
-    "TrainDatasetRegularization": TrainDatasetRegularization
+    "TrainDatasetRegularization": TrainDatasetRegularization,
+    "FluxTrainAndValidateLoop": FluxTrainAndValidateLoop
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1604,5 +1685,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "OptimizerConfigProdigy": "Optimizer Config Prodigy",
     "FluxTrainResume": "Flux Train Resume",
     "FluxTrainBlockSelect": "Flux Train Block Select",
-    "TrainDatasetRegularization": "Train Dataset Regularization"
+    "TrainDatasetRegularization": "Train Dataset Regularization",
+    "FluxTrainAndValidateLoop": "Flux Train And Validate Loop"
 }
