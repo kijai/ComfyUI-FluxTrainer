@@ -50,7 +50,12 @@ class FluxNetworkTrainer(NetworkTrainer):
         train_dataset_group.verify_bucket_reso_steps(32)  # TODO check this
 
     def get_flux_model_name(self, args):
-        return "schnell" if "schnell" in args.pretrained_model_name_or_path else "dev"
+        if "schnell" in args.pretrained_model_name_or_path:
+            return "schnell"
+        elif "open" in args.pretrained_model_name_or_path.lower():
+            return "schnell"
+        else:
+            return "dev"
 
     def load_target_model(self, args, weight_dtype, accelerator):
         # currently offload to cpu for some models
