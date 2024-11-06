@@ -438,11 +438,11 @@ configs = {
 
 # region math
 
-from sageattention import sageattn
+
 def attention(q: Tensor, k: Tensor, v: Tensor, pe: Tensor, attn_mask: Optional[Tensor] = None) -> Tensor:
     q, k = apply_rope(q, k, pe)
 
-    x = sageattn(q, k, v, attn_mask=attn_mask, smooth_k=False)
+    x = torch.nn.functional.scaled_dot_product_attention(q, k, v, attn_mask=attn_mask)
     x = rearrange(x, "B H L D -> B L (H D)")
 
     return x
