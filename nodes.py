@@ -446,7 +446,7 @@ class InitFluxLoRATraining:
             "t5xxl_max_token_length": 512,
             "alpha_mask": dataset["alpha_mask"],
             "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
-            "fp8_base_unet": False if "fp8" in train_text_encoder else True,
+            "fp8_base_unet": True if "fp8" in train_text_encoder else False,
             "disable_mmap_load_safetensors": False,
             "split_mode": split_mode,
         }

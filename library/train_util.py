@@ -1507,7 +1507,6 @@ class BaseDataset(torch.utils.data.Dataset):
                 text_encoder_outputs = self.text_encoder_output_caching_strategy.load_outputs_npz(
                     image_info.text_encoder_outputs_npz
                 )
-                text_encoder_outputs = [torch.FloatTensor(x) for x in text_encoder_outputs]
             else:
                 tokenization_required = True
             text_encoder_outputs_list.append(text_encoder_outputs)
@@ -4923,10 +4922,11 @@ def prepare_accelerator(args: argparse.Namespace):
             if args.wandb_api_key is not None:
                 wandb.login(key=args.wandb_api_key)
 
-    # torch.compile のオプション。 NO の場合は torch.compile は使わない
+    # torch.compile If NO, torch.compile is not used."
     dynamo_backend = "NO"
     if args.torch_compile:
         dynamo_backend = args.dynamo_backend
+        print(f"torch.compile is used with {dynamo_backend} backend")
 
     kwargs_handlers = (
         InitProcessGroupKwargs(timeout=datetime.timedelta(minutes=args.ddp_timeout)) if args.ddp_timeout else None,
