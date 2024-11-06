@@ -989,6 +989,7 @@ class FluxTrainEnd:
     RETURN_NAMES = ("lora_name", "metadata", "lora_path",)
     FUNCTION = "endtrain"
     CATEGORY = "FluxTrainer"
+    OUTPUT_NODE = True
 
     def endtrain(self, network_trainer, save_state):
         with torch.inference_mode(False):
