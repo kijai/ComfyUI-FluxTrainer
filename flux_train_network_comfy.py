@@ -50,9 +50,7 @@ class FluxNetworkTrainer(NetworkTrainer):
         train_dataset_group.verify_bucket_reso_steps(32)  # TODO check this
 
     def get_flux_model_name(self, args):
-        if "schnell" in args.pretrained_model_name_or_path:
-            return "schnell"
-        elif "open" in args.pretrained_model_name_or_path.lower():
+        if any(keyword in args.pretrained_model_name_or_path.lower() for keyword in ["schnell", "open", "libre"]):
             return "schnell"
         else:
             return "dev"
