@@ -228,7 +228,7 @@ class OptimizerConfig:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "optimizer_type": (["adamw8bit", "adamw","prodigy", "CAME", "Lion8bit", "Lion", "adamwschedulefree", "sgdschedulefree", "AdEMAMix8bit", "PagedAdEMAMix8bit"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
+            "optimizer_type": (["adamw8bit", "adamw","prodigy", "CAME", "Lion8bit", "Lion", "adamwschedulefree", "sgdschedulefree", "AdEMAMix8bit", "PagedAdEMAMix8bit", "ProdigyPlusScheduleFree"], {"default": "adamw8bit", "tooltip": "optimizer type"}),
             "max_grad_norm": ("FLOAT",{"default": 1.0, "min": 0.0, "tooltip": "gradient clipping"}),
             "lr_scheduler": (["constant", "cosine", "cosine_with_restarts", "polynomial", "constant_with_warmup"], {"default": "constant", "tooltip": "learning rate scheduler"}),
             "lr_warmup_steps": ("INT",{"default": 0, "min": 0, "tooltip": "learning rate warmup steps"}),
@@ -317,6 +317,38 @@ class OptimizerConfigProdigy:
                 f"use_bias_correction={use_bias_correction}"
             ]
         kwargs["optimizer_args"] = node_args + extra_args
+        kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
+        
+        return (kwargs,)
+    
+class OptimizerConfigProdigyPlusScheduleFree:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "prodigy_steps": ("INT",{"default": 750, "min": 0, "tooltip": "number of steps to run prodigy for, 25 percent of total steps is recommended"}),
+            "split_groups": ("BOOLEAN",{"default": True, "tooltip": "Track individual adaptation values for each parameter group."}),
+            #"beta3": ("FLOAT",{"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.0001, "tooltip": " Coefficient for computing the Prodigy stepsize using running averages. If set to None, uses the value of square root of beta2 (default: None)."}),
+            #"beta4": ("FLOAT",{"default": 0, "min": 0.0, "max": 1.0, "step": 0.0001, "tooltip": "Coefficient for updating the learning rate from Prodigy's adaptive stepsize. Smooths out spikes in learning rate adjustments. If set to None, beta1 is used instead. (default 0, which disables smoothing and uses original Prodigy behaviour)."}),
+            "use_bias_correction": ("BOOLEAN",{"default": False, "tooltip": "Turn on Adafactor-style bias correction, which scales beta2 directly."}),
+            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
+            "extra_optimizer_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional optimizer args"}),
+           },
+        }
+
+    RETURN_TYPES = ("ARGS",)
+    RETURN_NAMES = ("optimizer_settings",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, min_snr_gamma, use_bias_correction, extra_optimizer_args, **kwargs):
+        kwargs["optimizer_type"] = "ProdigyPlusScheduleFree"
+        kwargs["lr_scheduler"] = "constant"
+        extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split('|') if arg.strip()]
+        node_args = [
+                f"use_bias_correction={use_bias_correction}",
+            ]
+        kwargs["optimizer_args"] = node_args + extra_args
+
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         
         return (kwargs,)    
@@ -1663,7 +1695,8 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainResume": FluxTrainResume,
     "FluxTrainBlockSelect": FluxTrainBlockSelect,
     "TrainDatasetRegularization": TrainDatasetRegularization,
-    "FluxTrainAndValidateLoop": FluxTrainAndValidateLoop
+    "FluxTrainAndValidateLoop": FluxTrainAndValidateLoop,
+    "OptimizerConfigProdigyPlusScheduleFree": OptimizerConfigProdigyPlusScheduleFree,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1687,5 +1720,6 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainResume": "Flux Train Resume",
     "FluxTrainBlockSelect": "Flux Train Block Select",
     "TrainDatasetRegularization": "Train Dataset Regularization",
-    "FluxTrainAndValidateLoop": "Flux Train And Validate Loop"
+    "FluxTrainAndValidateLoop": "Flux Train And Validate Loop",
+    "OptimizerConfigProdigyPlusScheduleFree": "Optimizer Config ProdigyPlusScheduleFree",
 }
