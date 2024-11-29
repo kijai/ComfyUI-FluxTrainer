@@ -307,6 +307,7 @@ def denoise(
     comfy_pbar = ProgressBar(total=len(timesteps))
     for t_curr, t_prev in zip(tqdm(timesteps[:-1]), timesteps[1:]):
         t_vec = torch.full((img.shape[0],), t_curr, dtype=img.dtype, device=img.device)
+        model.prepare_block_swap_before_forward()
         pred = model(
             img=img,
             img_ids=img_ids,
@@ -320,7 +321,7 @@ def denoise(
 
         img = img + (t_prev - t_curr) * pred
         comfy_pbar.update(1)
-
+    model.prepare_block_swap_before_forward()
     return img
 
 # endregion

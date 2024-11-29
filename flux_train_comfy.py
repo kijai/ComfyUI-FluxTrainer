@@ -11,6 +11,7 @@
 # - Per-block fused optimizer instances
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 import copy
 import math
 import os
@@ -137,6 +138,7 @@ class FluxTrainer:
 
         train_dataset_group.verify_bucket_reso_steps(16)  # TODO これでいいか確認
 
+        _, is_schnell, _, _ = flux_utils.analyze_checkpoint_state(args.pretrained_model_name_or_path)
         if args.debug_dataset:
             if args.cache_text_encoder_outputs:
                 strategy_base.TextEncoderOutputsCachingStrategy.set_strategy(
@@ -144,6 +146,11 @@ class FluxTrainer:
                         args.cache_text_encoder_outputs_to_disk, args.text_encoder_batch_size, False, False
                     )
                 )
+            t5xxl_max_token_length = (
+                args.t5xxl_max_token_length if args.t5xxl_max_token_length is not None else (256 if is_schnell else 512)
+            )
+            strategy_base.TokenizeStrategy.set_strategy(strategy_flux.FluxTokenizeStrategy(t5xxl_max_token_length))
+
             train_dataset_group.set_current_strategies()
             train_util.debug_dataset(train_dataset_group, True)
             return
@@ -171,12 +178,11 @@ class FluxTrainer:
         weight_dtype, save_dtype = train_util.prepare_dtype(args)
 
         # モデルを読み込む
-        name = "schnell" if "schnell" in args.pretrained_model_name_or_path else "dev"
 
         # load VAE for caching latents
         ae = None
         if cache_latents:
-            ae = flux_utils.load_ae(name, args.ae, weight_dtype, "cpu")
+            ae = flux_utils.load_ae(args.ae, weight_dtype, "cpu", args.disable_mmap_load_safetensors)
             ae.to(accelerator.device, dtype=weight_dtype)
             ae.requires_grad_(False)
             ae.eval()
@@ -190,7 +196,7 @@ class FluxTrainer:
 
         # prepare tokenize strategy
         if args.t5xxl_max_token_length is None:
-            if name == "schnell":
+            if is_schnell:
                 t5xxl_max_token_length = 256
             else:
                 t5xxl_max_token_length = 512
@@ -201,8 +207,8 @@ class FluxTrainer:
         strategy_base.TokenizeStrategy.set_strategy(flux_tokenize_strategy)
 
         # load clip_l, t5xxl for caching text encoder outputs
-        clip_l = flux_utils.load_clip_l(args.clip_l, weight_dtype, "cpu")
-        t5xxl = flux_utils.load_t5xxl(args.t5xxl, weight_dtype, "cpu")
+        clip_l = flux_utils.load_clip_l(args.clip_l, weight_dtype, "cpu", args.disable_mmap_load_safetensors)
+        t5xxl = flux_utils.load_t5xxl(args.t5xxl, weight_dtype, "cpu", args.disable_mmap_load_safetensors)
         clip_l.eval()
         t5xxl.eval()
         clip_l.requires_grad_(False)
@@ -215,8 +221,8 @@ class FluxTrainer:
         sample_prompts_te_outputs = None
         if args.cache_text_encoder_outputs:
             # Text Encodes are eval and no grad here
-            clip_l.to(accelerator.device, dtype=weight_dtype)
-            t5xxl.to(accelerator.device, dtype=weight_dtype)
+            clip_l.to(accelerator.device)
+            t5xxl.to(accelerator.device)
 
             text_encoder_caching_strategy = strategy_flux.FluxTextEncoderOutputsCachingStrategy(
                 args.cache_text_encoder_outputs_to_disk, args.text_encoder_batch_size, False, False, args.apply_t5_attn_mask
@@ -230,7 +236,6 @@ class FluxTrainer:
             if args.sample_prompts is not None:
                 logger.info(f"cache Text Encoder outputs for sample prompt: {args.sample_prompts}")
 
-                tokenize_strategy: strategy_flux.FluxTokenizeStrategy = strategy_base.TokenizeStrategy.get_strategy()
                 text_encoding_strategy: strategy_flux.FluxTextEncodingStrategy = strategy_base.TextEncodingStrategy.get_strategy()
 
                 prompts = []
@@ -259,9 +264,9 @@ class FluxTrainer:
                         for p in [prompt_dict.get("prompt", ""), prompt_dict.get("negative_prompt", "")]:
                             if p not in sample_prompts_te_outputs:
                                 logger.info(f"cache Text Encoder outputs for prompt: {p}")
-                                tokens_and_masks = tokenize_strategy.tokenize(p)
+                                tokens_and_masks = flux_tokenize_strategy.tokenize(p)
                                 sample_prompts_te_outputs[p] = text_encoding_strategy.encode_tokens(
-                                    tokenize_strategy, [clip_l, t5xxl], tokens_and_masks, args.apply_t5_attn_mask
+                                    flux_tokenize_strategy, [clip_l, t5xxl], tokens_and_masks, args.apply_t5_attn_mask
                                 )
             self.sample_prompts_te_outputs = sample_prompts_te_outputs
             accelerator.wait_for_everyone()
@@ -272,26 +277,43 @@ class FluxTrainer:
             clean_memory_on_device(accelerator.device)
 
         # load FLUX
-        # if we load to cpu, flux.to(fp8) takes a long time
-        flux = flux_utils.load_flow_model(name, args.pretrained_model_name_or_path, weight_dtype, "cpu")
+        _, flux = flux_utils.load_flow_model(
+            args.pretrained_model_name_or_path, weight_dtype, "cpu", args.disable_mmap_load_safetensors
+        )
 
         if args.gradient_checkpointing:
             flux.enable_gradient_checkpointing(cpu_offload=args.cpu_offload_checkpointing)
 
         flux.requires_grad_(True)
 
-        is_swapping_blocks = args.double_blocks_to_swap is not None or args.single_blocks_to_swap is not None
+        # block swap
+
+        # backward compatibility
+        if args.blocks_to_swap is None:
+            blocks_to_swap = args.double_blocks_to_swap or 0
+            if args.single_blocks_to_swap is not None:
+                blocks_to_swap += args.single_blocks_to_swap // 2
+            if blocks_to_swap > 0:
+                logger.warning(
+                    "double_blocks_to_swap and single_blocks_to_swap are deprecated. Use blocks_to_swap instead."
+                    " / double_blocks_to_swapとsingle_blocks_to_swapは非推奨です。blocks_to_swapを使ってください。"
+                )
+                logger.info(
+                    f"double_blocks_to_swap={args.double_blocks_to_swap} and single_blocks_to_swap={args.single_blocks_to_swap} are converted to blocks_to_swap={blocks_to_swap}."
+                )
+                args.blocks_to_swap = blocks_to_swap
+            del blocks_to_swap
+
+        is_swapping_blocks = args.blocks_to_swap is not None and args.blocks_to_swap > 0
         if is_swapping_blocks:
             # Swap blocks between CPU and GPU to reduce memory usage, in forward and backward passes.
             # This idea is based on 2kpr's great work. Thank you!
-            logger.info(
-                f"enable block swap: double_blocks_to_swap={args.double_blocks_to_swap}, single_blocks_to_swap={args.single_blocks_to_swap}"
-            )
-            flux.enable_block_swap(args.double_blocks_to_swap, args.single_blocks_to_swap)
+            logger.info(f"enable block swap: blocks_to_swap={args.blocks_to_swap}")
+            flux.enable_block_swap(args.blocks_to_swap)
 
         if not cache_latents:
             # load VAE here if not cached
-            ae = flux_utils.load_ae(name, args.ae, weight_dtype, "cpu")
+            ae = flux_utils.load_ae(args.ae, weight_dtype, "cpu")
             ae.requires_grad_(False)
             ae.eval()
             ae.to(accelerator.device, dtype=weight_dtype)
@@ -366,7 +388,6 @@ class FluxTrainer:
                 raise ValueError("Schedule-free optimizer is not supported with blockwise fused optimizers")
             self.optimizer_train_fn = lambda: None  # dummy function
             self.optimizer_eval_fn = lambda: None  # dummy function
-
         else:
             _, _, optimizer = train_util.get_optimizer(args, trainable_params=params_to_optimize)
             self.optimizer_train_fn, self.optimizer_eval_fn = train_util.get_optimizer_train_eval_fn(optimizer, args)
@@ -443,11 +464,11 @@ class FluxTrainer:
             training_models = [ds_model]
 
         else:
-             # accelerator does some magic
+            # accelerator does some magic
             # if we doesn't swap blocks, we can move the model to device
             flux = accelerator.prepare(flux, device_placement=[not is_swapping_blocks])
             if is_swapping_blocks:
-                flux.move_to_device_except_swap_blocks(accelerator.device)  # reduce peak memory usage
+                accelerator.unwrap_model(flux).move_to_device_except_swap_blocks(accelerator.device)  # reduce peak memory usage
             optimizer, train_dataloader, lr_scheduler = accelerator.prepare(optimizer, train_dataloader, lr_scheduler)
 
         # 実験的機能：勾配も含めたfp16学習を行う　PyTorchにパッチを当ててfp16でのgrad scaleを有効にする
@@ -459,81 +480,122 @@ class FluxTrainer:
         # resumeする
         train_util.resume_from_local_or_hf_if_specified(accelerator, args)
 
+        
+
+        # memory efficient block swapping
+
+        def get_block_unit(dbl_blocks, sgl_blocks, index: int):
+            if index < len(dbl_blocks):
+                return (dbl_blocks[index],)
+            else:
+                index -= len(dbl_blocks)
+                index *= 2
+                return (sgl_blocks[index], sgl_blocks[index + 1])
+
+        def submit_move_blocks(futures, thread_pool, block_idx_to_cpu, block_idx_to_cuda, dbl_blocks, sgl_blocks, device):
+            def move_blocks(bidx_to_cpu, blocks_to_cpu, bidx_to_cuda, blocks_to_cuda, dvc):
+                # print(f"Backward: Move block {bidx_to_cpu} to CPU")
+                for block in blocks_to_cpu:
+                    block = block.to("cpu", non_blocking=True)
+                torch.cuda.empty_cache()
+
+                # print(f"Backward: Move block {bidx_to_cuda} to CUDA")
+                for block in blocks_to_cuda:
+                    block = block.to(dvc, non_blocking=True)
+
+                torch.cuda.synchronize()
+                # print(f"Backward: Moved blocks {bidx_to_cpu} and {bidx_to_cuda}")
+                return bidx_to_cpu, bidx_to_cuda
+
+            blocks_to_cpu = get_block_unit(dbl_blocks, sgl_blocks, block_idx_to_cpu)
+            blocks_to_cuda = get_block_unit(dbl_blocks, sgl_blocks, block_idx_to_cuda)
+
+            futures[block_idx_to_cuda] = thread_pool.submit(
+                move_blocks, block_idx_to_cpu, blocks_to_cpu, block_idx_to_cuda, blocks_to_cuda, device
+            )
+
+        def wait_blocks_move(block_idx, futures):
+            if block_idx not in futures:
+                return
+            # print(f"Backward: Wait for block {block_idx}")
+            # start_time = time.perf_counter()
+            future = futures.pop(block_idx)
+            future.result()
+            # print(f"Backward: Waited for block {block_idx}: {time.perf_counter()-start_time:.2f}s")
+            # torch.cuda.synchronize()
+            # print(f"Backward: Synchronized: {time.perf_counter()-start_time:.2f}s")
+
         if args.fused_backward_pass:
             # use fused optimizer for backward pass: other optimizers will be supported in the future
             from .library import adafactor_fused
 
             adafactor_fused.patch_adafactor_fused(optimizer)
-            double_blocks_to_swap = args.double_blocks_to_swap
-            single_blocks_to_swap = args.single_blocks_to_swap
-            num_double_blocks = len(flux.double_blocks)
-            num_single_blocks = len(flux.single_blocks)
-            handled_double_block_indices = set()
-            handled_single_block_indices = set()
+
+            blocks_to_swap = args.blocks_to_swap
+            num_double_blocks = len(accelerator.unwrap_model(flux).double_blocks)
+            num_single_blocks = len(accelerator.unwrap_model(flux).single_blocks)
+            num_block_units = num_double_blocks + num_single_blocks // 2
+            handled_unit_indices = set()
+
+            n = 1  # only asynchronous purpose, no need to increase this number
+            # n = 2
+            # n = max(1, os.cpu_count() // 2)
+            thread_pool = ThreadPoolExecutor(max_workers=n)
+            futures = {}
 
             for param_group, param_name_group in zip(optimizer.param_groups, param_names):
                 for parameter, param_name in zip(param_group["params"], param_name_group):
                     if parameter.requires_grad:
                         grad_hook = None
 
-                        if double_blocks_to_swap:
-                            if param_name.startswith("double_blocks"):
+                        if blocks_to_swap:
+                            is_double = param_name.startswith("double_blocks")
+                            is_single = param_name.startswith("single_blocks")
+                            if is_double or is_single:
                                 block_idx = int(param_name.split(".")[1])
-                                if (
-                                    block_idx not in handled_double_block_indices
-                                    and block_idx >= (num_double_blocks - double_blocks_to_swap) - 1
-                                    and block_idx < num_double_blocks - 1
-                                ):
-                                    # swap next (already backpropagated) block
-                                    handled_double_block_indices.add(block_idx)
-                                    block_idx_cpu = block_idx + 1
-                                    block_idx_cuda = double_blocks_to_swap - (num_double_blocks - block_idx_cpu)
+                                unit_idx = block_idx if is_double else num_double_blocks + block_idx // 2
+                                if unit_idx not in handled_unit_indices:
+                                    # swap following (already backpropagated) block
+                                    handled_unit_indices.add(unit_idx)
 
-                                    # create swap hook
-                                    def create_double_swap_grad_hook(bidx, bidx_cuda):
-                                        def __grad_hook(tensor: torch.Tensor):
-                                            if accelerator.sync_gradients and args.max_grad_norm != 0.0:
-                                                accelerator.clip_grad_norm_(tensor, args.max_grad_norm)
-                                            optimizer.step_param(tensor, param_group)
-                                            tensor.grad = None
+                                    # if n blocks were already backpropagated
+                                    num_blocks_propagated = num_block_units - unit_idx - 1
+                                    swapping = num_blocks_propagated > 0 and num_blocks_propagated <= blocks_to_swap
+                                    waiting = unit_idx > 0 and unit_idx <= blocks_to_swap
+                                    if swapping or waiting:
+                                        block_idx_to_cpu = num_block_units - num_blocks_propagated
+                                        block_idx_to_cuda = blocks_to_swap - num_blocks_propagated
+                                        block_idx_to_wait = unit_idx - 1
 
-                                            # swap blocks if necessary
-                                            flux.double_blocks[bidx].to("cpu")
-                                            flux.double_blocks[bidx_cuda].to(accelerator.device)
-                                            # print(f"Move double block {bidx} to cpu and {bidx_cuda} to device")
+                                        # create swap hook
+                                        def create_swap_grad_hook(
+                                            bidx_to_cpu, bidx_to_cuda, bidx_to_wait, uidx: int, swpng: bool, wtng: bool
+                                        ):
+                                            def __grad_hook(tensor: torch.Tensor):
+                                                if accelerator.sync_gradients and args.max_grad_norm != 0.0:
+                                                    accelerator.clip_grad_norm_(tensor, args.max_grad_norm)
+                                                optimizer.step_param(tensor, param_group)
+                                                tensor.grad = None
 
-                                        return __grad_hook
+                                                # print(f"Backward: {uidx}, {swpng}, {wtng}")
+                                                if swpng:
+                                                    submit_move_blocks(
+                                                        futures,
+                                                        thread_pool,
+                                                        bidx_to_cpu,
+                                                        bidx_to_cuda,
+                                                        flux.double_blocks,
+                                                        flux.single_blocks,
+                                                        accelerator.device,
+                                                    )
+                                                if wtng:
+                                                    wait_blocks_move(bidx_to_wait, futures)
 
-                                    grad_hook = create_double_swap_grad_hook(block_idx_cpu, block_idx_cuda)
-                        if single_blocks_to_swap:
-                            if param_name.startswith("single_blocks"):
-                                block_idx = int(param_name.split(".")[1])
-                                if (
-                                    block_idx not in handled_single_block_indices
-                                    and block_idx >= (num_single_blocks - single_blocks_to_swap) - 1
-                                    and block_idx < num_single_blocks - 1
-                                ):
-                                    handled_single_block_indices.add(block_idx)
-                                    block_idx_cpu = block_idx + 1
-                                    block_idx_cuda = single_blocks_to_swap - (num_single_blocks - block_idx_cpu)
-                                    # print(param_name, block_idx_cpu, block_idx_cuda)
+                                            return __grad_hook
 
-                                    # create swap hook
-                                    def create_single_swap_grad_hook(bidx, bidx_cuda):
-                                        def __grad_hook(tensor: torch.Tensor):
-                                            if accelerator.sync_gradients and args.max_grad_norm != 0.0:
-                                                accelerator.clip_grad_norm_(tensor, args.max_grad_norm)
-                                            optimizer.step_param(tensor, param_group)
-                                            tensor.grad = None
-
-                                            # swap blocks if necessary
-                                            flux.single_blocks[bidx].to("cpu")
-                                            flux.single_blocks[bidx_cuda].to(accelerator.device)
-                                            # print(f"Move single block {bidx} to cpu and {bidx_cuda} to device")
-
-                                        return __grad_hook
-
-                                    grad_hook = create_single_swap_grad_hook(block_idx_cpu, block_idx_cuda)
+                                        grad_hook = create_swap_grad_hook(
+                                            block_idx_to_cpu, block_idx_to_cuda, block_idx_to_wait, unit_idx, swapping, waiting
+                                        )
 
                         if grad_hook is None:
 
@@ -562,10 +624,15 @@ class FluxTrainer:
             num_parameters_per_group = [0] * len(optimizers)
             parameter_optimizer_map = {}
 
-            double_blocks_to_swap = args.double_blocks_to_swap
-            single_blocks_to_swap = args.single_blocks_to_swap
-            num_double_blocks = len(flux.double_blocks)
-            num_single_blocks = len(flux.single_blocks)
+            blocks_to_swap = args.blocks_to_swap
+            num_double_blocks = len(accelerator.unwrap_model(flux).double_blocks)
+            num_single_blocks = len(accelerator.unwrap_model(flux).single_blocks)
+            num_block_units = num_double_blocks + num_single_blocks // 2
+
+            n = 1  # only asynchronous purpose, no need to increase this number
+            # n = max(1, os.cpu_count() // 2)
+            thread_pool = ThreadPoolExecutor(max_workers=n)
+            futures = {}
 
             for opt_idx, optimizer in enumerate(optimizers):
                 for param_group in optimizer.param_groups:
@@ -586,18 +653,30 @@ class FluxTrainer:
                                         optimizers[i].zero_grad(set_to_none=True)
 
                                         # swap blocks if necessary
-                                        if btype == "double" and double_blocks_to_swap:
-                                            if bidx >= num_double_blocks - double_blocks_to_swap:
-                                                bidx_cuda = double_blocks_to_swap - (num_double_blocks - bidx)
-                                                flux.double_blocks[bidx].to("cpu")
-                                                flux.double_blocks[bidx_cuda].to(accelerator.device)
-                                                # print(f"Move double block {bidx} to cpu and {bidx_cuda} to device")
-                                        elif btype == "single" and single_blocks_to_swap:
-                                            if bidx >= num_single_blocks - single_blocks_to_swap:
-                                                bidx_cuda = single_blocks_to_swap - (num_single_blocks - bidx)
-                                                flux.single_blocks[bidx].to("cpu")
-                                                flux.single_blocks[bidx_cuda].to(accelerator.device)
-                                                # print(f"Move single block {bidx} to cpu and {bidx_cuda} to device")
+                                        if blocks_to_swap and (btype == "double" or (btype == "single" and bidx % 2 == 0)):
+                                            unit_idx = bidx if btype == "double" else num_double_blocks + bidx // 2
+                                            num_blocks_propagated = num_block_units - unit_idx
+
+                                            swapping = num_blocks_propagated > 0 and num_blocks_propagated <= blocks_to_swap
+                                            waiting = unit_idx > 0 and unit_idx <= blocks_to_swap
+
+                                            if swapping:
+                                                block_idx_to_cpu = num_block_units - num_blocks_propagated
+                                                block_idx_to_cuda = blocks_to_swap - num_blocks_propagated
+                                                # print(f"Backward: Swap blocks {block_idx_to_cpu} and {block_idx_to_cuda}")
+                                                submit_move_blocks(
+                                                    futures,
+                                                    thread_pool,
+                                                    block_idx_to_cpu,
+                                                    block_idx_to_cuda,
+                                                    flux.double_blocks,
+                                                    flux.single_blocks,
+                                                    accelerator.device,
+                                                )
+
+                                            if waiting:
+                                                block_idx_to_wait = unit_idx - 1
+                                                wait_blocks_move(block_idx_to_wait, futures)
 
                                 return optimizer_hook
 
@@ -645,7 +724,7 @@ class FluxTrainer:
             )
 
         if is_swapping_blocks:
-            flux.prepare_block_swap_before_forward()
+            accelerator.unwrap_model(flux).prepare_block_swap_before_forward()
 
         # For --sample_at_first
         #flux_train_utils.sample_images(accelerator, args, 0, global_step, flux, ae, [clip_l, t5xxl], sample_prompts_te_outputs)
@@ -698,11 +777,11 @@ class FluxTrainer:
                         text_encoder_conds = text_encoder_outputs_list
                     else:
                         # not cached or training, so get from text encoders
-                        self.tokens_and_masks = batch["input_ids_list"]
+                        tokens_and_masks = batch["input_ids_list"]
                         with torch.no_grad():
                             input_ids = [ids.to(accelerator.device) for ids in batch["input_ids_list"]]
                             text_encoder_conds = text_encoding_strategy.encode_tokens(
-                                tokenize_strategy, [clip_l, t5xxl], input_ids, args.apply_t5_attn_mask
+                                flux_tokenize_strategy, [clip_l, t5xxl], input_ids, args.apply_t5_attn_mask
                             )
                             if args.full_fp16:
                                 text_encoder_conds = [c.to(weight_dtype) for c in text_encoder_conds]
@@ -723,13 +802,14 @@ class FluxTrainer:
                     packed_latent_height, packed_latent_width = noisy_model_input.shape[2] // 2, noisy_model_input.shape[3] // 2
                     img_ids = flux_utils.prepare_img_ids(bsz, packed_latent_height, packed_latent_width).to(device=accelerator.device)
 
-                    # get guidance
-                    guidance_vec = torch.full((bsz,), args.guidance_scale, device=accelerator.device)
+                    # get guidance: ensure args.guidance_scale is float
+                    guidance_vec = torch.full((bsz,), float(args.guidance_scale), device=accelerator.device)
 
                     # call model
                     l_pooled, t5_out, txt_ids, t5_attn_mask = text_encoder_conds
                     if not args.apply_t5_attn_mask:
                         t5_attn_mask = None
+
                     with accelerator.autocast():
                         # YiYi notes: divide it by 1000 for now because we scale it by 1000 in the transformer model (we should not keep it but I want to keep the inputs same for the model for testing)
                         model_pred = flux(
@@ -740,6 +820,7 @@ class FluxTrainer:
                             y=l_pooled,
                             timesteps=timesteps / 1000,
                             guidance=guidance_vec,
+                            txt_attention_mask=t5_attn_mask,
                         )
 
                     # unpack latents
@@ -866,7 +947,11 @@ class FluxTrainer:
         #     flux_train_utils.save_flux_model_on_train_end(args, save_dtype, epoch, global_step, flux)
         #     logger.info("model saved.")
 
-
+    def sample_images(self, accelerator, args, epoch, global_step, flux, ae, text_encoder, sample_prompts_te_outputs, validation_settings):
+            image_tensors = flux_train_utils.sample_images(
+            accelerator, args, epoch, global_step, flux, ae, text_encoder, sample_prompts_te_outputs, validation_settings)
+            clean_memory_on_device(accelerator.device)
+            return image_tensors
 def setup_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
 
@@ -881,6 +966,12 @@ def setup_parser() -> argparse.ArgumentParser:
     config_util.add_config_arguments(parser)
     add_custom_train_arguments(parser)  # TODO remove this from here
     flux_train_utils.add_flux_train_arguments(parser)
+
+    parser.add_argument(
+        "--mem_eff_save",
+        action="store_true",
+        help="[EXPERIMENTAL] use memory efficient custom model saving method / メモリ効率の良い独自のモデル保存方法を使う",
+    )
 
     parser.add_argument(
         "--fused_optimizer_groups",
@@ -898,26 +989,7 @@ def setup_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="skip latents validity check / latentsの正当性チェックをスキップする",
     )
-    parser.add_argument(
-        "--double_blocks_to_swap",
-        type=int,
-        default=None,
-        help="[EXPERIMENTAL] "
-        "Sets the number of 'double_blocks' (~640MB) to swap during the forward and backward passes."
-        "Increasing this number lowers the overall VRAM used during training at the expense of training speed (s/it)."
-        " / 順伝播および逆伝播中にスワップする'変換ブロック'（約640MB）の数を設定します。"
-        "この数を増やすと、トレーニング中のVRAM使用量が減りますが、トレーニング速度（s/it）も低下します。",
-    )
-    parser.add_argument(
-        "--single_blocks_to_swap",
-        type=int,
-        default=None,
-        help="[EXPERIMENTAL] "
-        "Sets the number of 'single_blocks' (~320MB) to swap during the forward and backward passes."
-        "Increasing this number lowers the overall VRAM used during training at the expense of training speed (s/it)."
-        " / 順伝播および逆伝播中にスワップする'変換ブロック'（約320MB）の数を設定します。"
-        "この数を増やすと、トレーニング中のVRAM使用量が減りますが、トレーニング速度（s/it）も低下します。",
-    )
+    
     parser.add_argument(
         "--cpu_offload_checkpointing",
         action="store_true",

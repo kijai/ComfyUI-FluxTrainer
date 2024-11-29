@@ -49,22 +49,15 @@ class FluxNetworkTrainer(NetworkTrainer):
 
         train_dataset_group.verify_bucket_reso_steps(32)  # TODO check this
 
-    def get_flux_model_name(self, args):
-        if any(keyword in args.pretrained_model_name_or_path.lower() for keyword in ["schnell", "open", "libre"]):
-            return "schnell"
-        else:
-            return "dev"
-
     def load_target_model(self, args, weight_dtype, accelerator):
         # currently offload to cpu for some models
-        name = self.get_flux_model_name(args)
 
         # if the file is fp8 and we are using fp8_base, we can load it as is (fp8)
         loading_dtype = None if args.fp8_base else weight_dtype
 
         # if we load to cpu, flux.to(fp8) takes a long time, so we should load to gpu in future
-        model = flux_utils.load_flow_model(
-            name, args.pretrained_model_name_or_path, loading_dtype, "cpu", disable_mmap=args.disable_mmap_load_safetensors
+        self.is_schnell, model = flux_utils.load_flow_model(
+            args.pretrained_model_name_or_path, loading_dtype, "cpu", disable_mmap=args.disable_mmap_load_safetensors
         )
         if args.fp8_base:
             # check dtype of model
@@ -95,7 +88,7 @@ class FluxNetworkTrainer(NetworkTrainer):
             elif t5xxl.dtype == torch.float8_e4m3fn:
                 logger.info("Loaded fp8 T5XXL model")
 
-        ae = flux_utils.load_ae(name, args.ae, weight_dtype, "cpu", disable_mmap=args.disable_mmap_load_safetensors)
+        ae = flux_utils.load_ae(args.ae, weight_dtype, "cpu", disable_mmap=args.disable_mmap_load_safetensors)
 
         return flux_utils.MODEL_VERSION_FLUX_V1, [clip_l, t5xxl], ae, model
 
@@ -143,10 +136,10 @@ class FluxNetworkTrainer(NetworkTrainer):
         return flux_lower
 
     def get_tokenize_strategy(self, args):
-        name = self.get_flux_model_name(args)
+        _, is_schnell, _, _ = flux_utils.analyze_checkpoint_state(args.pretrained_model_name_or_path)
 
         if args.t5xxl_max_token_length is None:
-            if name == "schnell":
+            if is_schnell:
                 t5xxl_max_token_length = 256
             else:
                 t5xxl_max_token_length = 512
