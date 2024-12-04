@@ -5,13 +5,12 @@ from typing import List, Optional, Tuple, Union
 import einops
 import torch
 
-from safetensors.torch import load_file
 from safetensors import safe_open
 from accelerate import init_empty_weights
 from transformers import CLIPTextModel, CLIPConfig, T5EncoderModel, T5Config
 
 from .flux_models import Flux, AutoEncoder, configs
-from .utils import setup_logging, MemoryEfficientSafeOpen
+from .utils import setup_logging, load_safetensors
 
 setup_logging()
 import logging
@@ -21,26 +20,6 @@ logger = logging.getLogger(__name__)
 MODEL_VERSION_FLUX_V1 = "flux1"
 MODEL_NAME_DEV = "dev"
 MODEL_NAME_SCHNELL = "schnell"
-
-
-# temporary copy from sd3_utils TODO refactor
-def load_safetensors(
-    path: str, device: Union[str, torch.device], disable_mmap: bool = False, dtype: Optional[torch.dtype] = torch.float32
-):
-    if disable_mmap:
-        # return safetensors.torch.load(open(path, "rb").read())
-        # use experimental loader
-        logger.info(f"Loading without mmap (experimental)")
-        state_dict = {}
-        with MemoryEfficientSafeOpen(path) as f:
-            for key in f.keys():
-                state_dict[key] = f.get_tensor(key).to(device, dtype=dtype)
-        return state_dict
-    else:
-        try:
-            return load_file(path, device=device)
-        except:
-            return load_file(path)  # prevent device invalid Error
 
 
 def analyze_checkpoint_state(ckpt_path: str) -> Tuple[bool, bool, Tuple[int, int], List[str]]:

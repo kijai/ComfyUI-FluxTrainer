@@ -3,6 +3,7 @@
 import argparse
 import ast
 import asyncio
+from concurrent.futures import Future, ThreadPoolExecutor
 import datetime
 import importlib
 import json
@@ -73,7 +74,6 @@ from PIL import Image
 import imagesize
 import cv2
 import safetensors.torch
-from .lpw_stable_diffusion import StableDiffusionLongPromptWeightingPipeline
 from . import model_util as model_util
 from . import huggingface_util as huggingface_util
 from . import sai_model_spec as sai_model_spec
@@ -391,6 +391,7 @@ class BaseSubset:
         caption_suffix: Optional[str],
         token_warmup_min: int,
         token_warmup_step: Union[float, int],
+        custom_attributes: Optional[Dict[str, Any]] = None,
     ) -> None:
         self.image_dir = image_dir
         self.alpha_mask = alpha_mask if alpha_mask is not None else False
@@ -413,6 +414,8 @@ class BaseSubset:
 
         self.token_warmup_min = token_warmup_min  # step=0におけるタグの数
         self.token_warmup_step = token_warmup_step  # N（N<1ならN*max_train_steps）ステップ目でタグの数が最大になる
+
+        self.custom_attributes = custom_attributes if custom_attributes is not None else {}
 
         self.img_count = 0
 
@@ -444,6 +447,7 @@ class DreamBoothSubset(BaseSubset):
         caption_suffix,
         token_warmup_min,
         token_warmup_step,
+        custom_attributes: Optional[Dict[str, Any]] = None,
     ) -> None:
         assert image_dir is not None, "image_dir must be specified / image_dirは指定が必須です"
 
@@ -468,6 +472,7 @@ class DreamBoothSubset(BaseSubset):
             caption_suffix,
             token_warmup_min,
             token_warmup_step,
+            custom_attributes=custom_attributes,
         )
 
         self.is_reg = is_reg
@@ -507,6 +512,7 @@ class FineTuningSubset(BaseSubset):
         caption_suffix,
         token_warmup_min,
         token_warmup_step,
+        custom_attributes: Optional[Dict[str, Any]] = None,
     ) -> None:
         assert metadata_file is not None, "metadata_file must be specified / metadata_fileは指定が必須です"
 
@@ -531,6 +537,7 @@ class FineTuningSubset(BaseSubset):
             caption_suffix,
             token_warmup_min,
             token_warmup_step,
+            custom_attributes=custom_attributes,
         )
 
         self.metadata_file = metadata_file
@@ -566,6 +573,7 @@ class ControlNetSubset(BaseSubset):
         caption_suffix,
         token_warmup_min,
         token_warmup_step,
+        custom_attributes: Optional[Dict[str, Any]] = None,
     ) -> None:
         assert image_dir is not None, "image_dir must be specified / image_dirは指定が必須です"
 
@@ -590,6 +598,7 @@ class ControlNetSubset(BaseSubset):
             caption_suffix,
             token_warmup_min,
             token_warmup_step,
+            custom_attributes=custom_attributes,
         )
 
         self.conditioning_data_dir = conditioning_data_dir
@@ -660,6 +669,34 @@ class BaseDataset(torch.utils.data.Dataset):
         self.tokenize_strategy = TokenizeStrategy.get_strategy()
         self.text_encoder_output_caching_strategy = TextEncoderOutputsCachingStrategy.get_strategy()
         self.latents_caching_strategy = LatentsCachingStrategy.get_strategy()
+
+    def adjust_min_max_bucket_reso_by_steps(
+        self, resolution: Tuple[int, int], min_bucket_reso: int, max_bucket_reso: int, bucket_reso_steps: int
+    ) -> Tuple[int, int]:
+        # make min/max bucket reso to be multiple of bucket_reso_steps
+        if min_bucket_reso % bucket_reso_steps != 0:
+            adjusted_min_bucket_reso = min_bucket_reso - min_bucket_reso % bucket_reso_steps
+            logger.warning(
+                f"min_bucket_reso is adjusted to be multiple of bucket_reso_steps"
+                f" / min_bucket_resoがbucket_reso_stepsの倍数になるように調整されました: {min_bucket_reso} -> {adjusted_min_bucket_reso}"
+            )
+            min_bucket_reso = adjusted_min_bucket_reso
+        if max_bucket_reso % bucket_reso_steps != 0:
+            adjusted_max_bucket_reso = max_bucket_reso + bucket_reso_steps - max_bucket_reso % bucket_reso_steps
+            logger.warning(
+                f"max_bucket_reso is adjusted to be multiple of bucket_reso_steps"
+                f" / max_bucket_resoがbucket_reso_stepsの倍数になるように調整されました: {max_bucket_reso} -> {adjusted_max_bucket_reso}"
+            )
+            max_bucket_reso = adjusted_max_bucket_reso
+
+        assert (
+            min(resolution) >= min_bucket_reso
+        ), f"min_bucket_reso must be equal or less than resolution / min_bucket_resoは最小解像度より大きくできません。解像度を大きくするかmin_bucket_resoを小さくしてください"
+        assert (
+            max(resolution) <= max_bucket_reso
+        ), f"max_bucket_reso must be equal or greater than resolution / max_bucket_resoは最大解像度より小さくできません。解像度を小さくするかmin_bucket_resoを大きくしてください"
+
+        return min_bucket_reso, max_bucket_reso
 
     def set_seed(self, seed):
         self.seed = seed
@@ -981,7 +1018,7 @@ class BaseDataset(torch.utils.data.Dataset):
             ]
         )
 
-    def new_cache_latents(self, model: Any, is_main_process: bool):
+    def new_cache_latents(self, model: Any, accelerator: Accelerator):
         r"""
         a brand new method to cache latents. This method caches latents with caching strategy.
         normal cache_latents method is used by default, but this method is used when caching strategy is specified.
@@ -993,57 +1030,97 @@ class BaseDataset(torch.utils.data.Dataset):
         # sort by resolution
         image_infos.sort(key=lambda info: info.bucket_reso[0] * info.bucket_reso[1])
 
-        # split by resolution
-        batches = []
-        batch = []
-        logger.info("checking cache validity...")
-        for info in tqdm(image_infos):
-            subset = self.image_to_subset[info.image_key]
+        # split by resolution and some conditions
+        class Condition:
+            def __init__(self, reso, flip_aug, alpha_mask, random_crop):
+                self.reso = reso
+                self.flip_aug = flip_aug
+                self.alpha_mask = alpha_mask
+                self.random_crop = random_crop
 
-            if info.latents_npz is not None:  # fine tuning dataset
-                continue
-
-            # check disk cache exists and size of latents
-            if caching_strategy.cache_to_disk:
-                # info.latents_npz = os.path.splitext(info.absolute_path)[0] + file_suffix
-                info.latents_npz = caching_strategy.get_latents_npz_path(info.absolute_path, info.image_size)
-                if not is_main_process:  # prepare for multi-gpu, only store to info
-                    continue
-
-                cache_available = caching_strategy.is_disk_cached_latents_expected(
-                    info.bucket_reso, info.latents_npz, subset.flip_aug, subset.alpha_mask
+            def __eq__(self, other):
+                return (
+                    self.reso == other.reso
+                    and self.flip_aug == other.flip_aug
+                    and self.alpha_mask == other.alpha_mask
+                    and self.random_crop == other.random_crop
                 )
-                if cache_available:  # do not add to batch
+
+        batch: List[ImageInfo] = []
+        current_condition = None
+
+        # support multiple-gpus
+        num_processes = accelerator.num_processes
+        process_index = accelerator.process_index
+
+        # define a function to submit a batch to cache
+        def submit_batch(batch, cond):
+            for info in batch:
+                if info.image is not None and isinstance(info.image, Future):
+                    info.image = info.image.result()  # future to image
+            caching_strategy.cache_batch_latents(model, batch, cond.flip_aug, cond.alpha_mask, cond.random_crop)
+
+            # remove image from memory
+            for info in batch:
+                info.image = None
+
+        # define ThreadPoolExecutor to load images in parallel
+        max_workers = min(os.cpu_count(), len(image_infos))
+        max_workers = max(1, max_workers // num_processes)  # consider multi-gpu
+        max_workers = min(max_workers, caching_strategy.batch_size)  # max_workers should be less than batch_size
+        executor = ThreadPoolExecutor(max_workers)
+
+        try:
+            # iterate images
+            logger.info("caching latents...")
+            for i, info in enumerate(tqdm(image_infos)):
+                subset = self.image_to_subset[info.image_key]
+
+                if info.latents_npz is not None:  # fine tuning dataset
                     continue
 
-            # if last member of batch has different resolution, flush the batch
-            if len(batch) > 0 and batch[-1].bucket_reso != info.bucket_reso:
-                batches.append(batch)
-                batch = []
+                # check disk cache exists and size of latents
+                if caching_strategy.cache_to_disk:
+                    # info.latents_npz = os.path.splitext(info.absolute_path)[0] + file_suffix
+                    info.latents_npz = caching_strategy.get_latents_npz_path(info.absolute_path, info.image_size)
 
-            batch.append(info)
+                    # if the modulo of num_processes is not equal to process_index, skip caching
+                    # this makes each process cache different latents
+                    if i % num_processes != process_index:
+                        continue
 
-            # if number of data in batch is enough, flush the batch
-            if len(batch) >= caching_strategy.batch_size:
-                batches.append(batch)
-                batch = []
+                    # print(f"{process_index}/{num_processes} {i}/{len(image_infos)} {info.latents_npz}")
 
-        if len(batch) > 0:
-            batches.append(batch)
+                    cache_available = caching_strategy.is_disk_cached_latents_expected(
+                        info.bucket_reso, info.latents_npz, subset.flip_aug, subset.alpha_mask
+                    )
+                    if cache_available:  # do not add to batch
+                        continue
 
-        # if cache to disk, don't cache latents in non-main process, set to info only
-        if caching_strategy.cache_to_disk and not is_main_process:
-            return
+                # if batch is not empty and condition is changed, flush the batch. Note that current_condition is not None if batch is not empty
+                condition = Condition(info.bucket_reso, subset.flip_aug, subset.alpha_mask, subset.random_crop)
+                if len(batch) > 0 and current_condition != condition:
+                    submit_batch(batch, current_condition)
+                    batch = []
 
-        if len(batches) == 0:
-            logger.info("no latents to cache")
-            return
+                if info.image is None:
+                    # load image in parallel
+                    info.image = executor.submit(load_image, info.absolute_path, condition.alpha_mask)
 
-        # iterate batches: batch doesn't have image here. image will be loaded in cache_batch_latents and discarded
-        logger.info("caching latents...")
-        for batch in tqdm(batches, smoothing=1, total=len(batches)):
-            # cache_batch_latents(vae, cache_to_disk, batch, subset.flip_aug, subset.alpha_mask, subset.random_crop)
-            caching_strategy.cache_batch_latents(model, batch, subset.flip_aug, subset.alpha_mask, subset.random_crop)
+                batch.append(info)
+                current_condition = condition
+
+                # if number of data in batch is enough, flush the batch
+                if len(batch) >= caching_strategy.batch_size:
+                    submit_batch(batch, current_condition)
+                    batch = []
+                    current_condition = None
+
+            if len(batch) > 0:
+                submit_batch(batch, current_condition)
+
+        finally:
+            executor.shutdown()
 
     def cache_latents(self, vae, vae_batch_size=1, cache_to_disk=False, is_main_process=True, file_suffix=".npz"):
         # マルチGPUには対応していないので、そちらはtools/cache_latents.pyを使うこと
@@ -1120,7 +1197,7 @@ class BaseDataset(torch.utils.data.Dataset):
         for condition, batch in tqdm(batches, smoothing=1, total=len(batches)):
             cache_batch_latents(vae, cache_to_disk, batch, condition.flip_aug, condition.alpha_mask, condition.random_crop)
 
-    def new_cache_text_encoder_outputs(self, models: List[Any], is_main_process: bool):
+    def new_cache_text_encoder_outputs(self, models: List[Any], accelerator: Accelerator):
         r"""
         a brand new method to cache text encoder outputs. This method caches text encoder outputs with caching strategy.
         """
@@ -1135,13 +1212,23 @@ class BaseDataset(torch.utils.data.Dataset):
         # split by resolution
         batches = []
         batch = []
-        logger.info("checking cache validity...")
-        for info in tqdm(image_infos):
-            te_out_npz = caching_strategy.get_outputs_npz_path(info.absolute_path)
 
-            # check disk cache exists and size of latents
+        # support multiple-gpus
+        num_processes = accelerator.num_processes
+        process_index = accelerator.process_index
+
+        logger.info("checking cache validity...")
+        for i, info in enumerate(tqdm(image_infos)):
+            # check disk cache exists and size of text encoder outputs
             if caching_strategy.cache_to_disk:
-                info.text_encoder_outputs_npz = te_out_npz  # set npz filename regardless of cache availability/main process
+                te_out_npz = caching_strategy.get_outputs_npz_path(info.absolute_path)
+                info.text_encoder_outputs_npz = te_out_npz  # set npz filename regardless of cache availability
+
+                # if the modulo of num_processes is not equal to process_index, skip caching
+                # this makes each process cache different text encoder outputs
+                if i % num_processes != process_index:
+                    continue
+
                 cache_available = caching_strategy.is_disk_cached_outputs_expected(te_out_npz)
                 if cache_available:  # do not add to batch
                     continue
@@ -1292,7 +1379,17 @@ class BaseDataset(torch.utils.data.Dataset):
                 )
 
     def get_image_size(self, image_path):
-        return imagesize.get(image_path)
+        # return imagesize.get(image_path)
+        image_size = imagesize.get(image_path)
+        if image_size[0] <= 0:
+            # imagesize doesn't work for some images, so use PIL as a fallback
+            try:
+                with Image.open(image_path) as img:
+                    image_size = img.size
+            except Exception as e:
+                logger.warning(f"failed to get image size: {image_path}, error: {e}")
+                image_size = (0, 0)
+        return image_size
 
     def load_image_with_face_info(self, subset: BaseSubset, image_path: str, alpha_mask=False):
         img = load_image(image_path, alpha_mask)
@@ -1378,10 +1475,13 @@ class BaseDataset(torch.utils.data.Dataset):
         target_sizes_hw = []
         flippeds = []  # 変数名が微妙
         text_encoder_outputs_list = []
+        custom_attributes = []
 
         for image_key in bucket[image_index : image_index + bucket_batch_size]:
             image_info = self.image_data[image_key]
             subset = self.image_to_subset[image_key]
+
+            custom_attributes.append(subset.custom_attributes)
 
             # in case of fine tuning, is_reg is always False
             loss_weights.append(self.prior_loss_weight if image_info.is_reg else 1.0)
@@ -1549,7 +1649,9 @@ class BaseDataset(torch.utils.data.Dataset):
                 return None
             return [torch.stack([converter(x[i]) for x in tensors_list]) for i in range(len(tensors_list[0]))]
 
+        # set example
         example = {}
+        example["custom_attributes"] = custom_attributes  # may be list of empty dict
         example["loss_weights"] = torch.FloatTensor(loss_weights)
         example["text_encoder_outputs_list"] = none_or_stack_elements(text_encoder_outputs_list, torch.FloatTensor)
         example["input_ids_list"] = none_or_stack_elements(input_ids_list, lambda x: x)
@@ -1687,12 +1789,9 @@ class DreamBoothDataset(BaseDataset):
 
         self.enable_bucket = enable_bucket
         if self.enable_bucket:
-            assert (
-                min(resolution) >= min_bucket_reso
-            ), f"min_bucket_reso must be equal or less than resolution / min_bucket_resoは最小解像度より大きくできません。解像度を大きくするかmin_bucket_resoを小さくしてください"
-            assert (
-                max(resolution) <= max_bucket_reso
-            ), f"max_bucket_reso must be equal or greater than resolution / max_bucket_resoは最大解像度より小さくできません。解像度を小さくするかmin_bucket_resoを大きくしてください"
+            min_bucket_reso, max_bucket_reso = self.adjust_min_max_bucket_reso_by_steps(
+                resolution, min_bucket_reso, max_bucket_reso, bucket_reso_steps
+            )
             self.min_bucket_reso = min_bucket_reso
             self.max_bucket_reso = max_bucket_reso
             self.bucket_reso_steps = bucket_reso_steps
@@ -1731,9 +1830,8 @@ class DreamBoothDataset(BaseDataset):
 
         def load_dreambooth_dir(subset: DreamBoothSubset):
             if not os.path.isdir(subset.image_dir):
-                raise ValueError(f"'{subset.image_dir}' is not a directory")
-                #logger.warning(f"not directory: {subset.image_dir}")
-                #return [], []
+                logger.warning(f"not directory: {subset.image_dir}")
+                return [], [], []
 
             info_cache_file = os.path.join(subset.image_dir, self.IMAGE_INFO_CACHE_FILE)
             use_cached_info_for_subset = subset.cache_info
@@ -1758,17 +1856,38 @@ class DreamBoothDataset(BaseDataset):
                 # we may need to check image size and existence of image files, but it takes time, so user should check it before training
             else:
                 img_paths = glob_images(subset.image_dir, "*")
-                if not img_paths:
-                    raise ValueError(f"no image files found in {subset.image_dir}")
                 sizes = [None] * len(img_paths)
 
                 # new caching: get image size from cache files
                 strategy = LatentsCachingStrategy.get_strategy()
                 if strategy is not None:
                     logger.info("get image size from name of cache files")
+
+                    # make image path to npz path mapping
+                    npz_paths = glob.glob(os.path.join(subset.image_dir, "*" + strategy.cache_suffix))
+                    npz_paths.sort(
+                        key=lambda item: item.rsplit("_", maxsplit=2)[0]
+                    )  # sort by name excluding resolution and cache_suffix
+                    npz_path_index = 0
+
                     size_set_count = 0
                     for i, img_path in enumerate(tqdm(img_paths)):
-                        w, h = strategy.get_image_size_from_disk_cache_path(img_path)
+                        l = len(os.path.splitext(img_path)[0])  # remove extension
+                        found = False
+                        while npz_path_index < len(npz_paths):  # until found or end of npz_paths
+                            # npz_paths are sorted, so if npz_path > img_path, img_path is not found
+                            if npz_paths[npz_path_index][:l] > img_path[:l]:
+                                break
+                            if npz_paths[npz_path_index][:l] == img_path[:l]:  # found
+                                found = True
+                                break
+                            npz_path_index += 1  # next npz_path
+
+                        if found:
+                            w, h = strategy.get_image_size_from_disk_cache_path(img_path, npz_paths[npz_path_index])
+                        else:
+                            w, h = None, None
+
                         if w is not None and h is not None:
                             sizes[i] = [w, h]
                             size_set_count += 1
@@ -1783,7 +1902,7 @@ class DreamBoothDataset(BaseDataset):
                 # 画像ファイルごとにプロンプトを読み込み、もしあればそちらを使う
                 captions = []
                 missing_captions = []
-                for img_path in img_paths:
+                for img_path in tqdm(img_paths, desc="read caption"):
                     cap_for_img = read_caption(img_path, subset.caption_extension, subset.enable_wildcard)
                     if cap_for_img is None and subset.class_tokens is None:
                         logger.warning(
@@ -2074,6 +2193,9 @@ class FineTuningDataset(BaseDataset):
 
             self.enable_bucket = enable_bucket
             if self.enable_bucket:
+                min_bucket_reso, max_bucket_reso = self.adjust_min_max_bucket_reso_by_steps(
+                    resolution, min_bucket_reso, max_bucket_reso, bucket_reso_steps
+                )
                 self.min_bucket_reso = min_bucket_reso
                 self.max_bucket_reso = max_bucket_reso
                 self.bucket_reso_steps = bucket_reso_steps
@@ -2247,8 +2369,8 @@ class ControlNetDataset(BaseDataset):
     def cache_latents(self, vae, vae_batch_size=1, cache_to_disk=False, is_main_process=True):
         return self.dreambooth_dataset_delegate.cache_latents(vae, vae_batch_size, cache_to_disk, is_main_process)
 
-    def new_cache_latents(self, model: Any, is_main_process: bool):
-        return self.dreambooth_dataset_delegate.new_cache_latents(model, is_main_process)
+    def new_cache_latents(self, model: Any, accelerator: Accelerator):
+        return self.dreambooth_dataset_delegate.new_cache_latents(model, accelerator)
 
     def new_cache_text_encoder_outputs(self, models: List[Any], is_main_process: bool):
         return self.dreambooth_dataset_delegate.new_cache_text_encoder_outputs(models, is_main_process)
@@ -2352,10 +2474,11 @@ class DatasetGroup(torch.utils.data.ConcatDataset):
             logger.info(f"[Dataset {i}]")
             dataset.cache_latents(vae, vae_batch_size, cache_to_disk, is_main_process, file_suffix)
 
-    def new_cache_latents(self, model: Any, is_main_process: bool):
+    def new_cache_latents(self, model: Any, accelerator: Accelerator):
         for i, dataset in enumerate(self.datasets):
             logger.info(f"[Dataset {i}]")
-            dataset.new_cache_latents(model, is_main_process)
+            dataset.new_cache_latents(model, accelerator)
+        accelerator.wait_for_everyone()
 
     def cache_text_encoder_outputs(
         self, tokenizers, text_encoders, device, weight_dtype, cache_to_disk=False, is_main_process=True
@@ -2373,10 +2496,11 @@ class DatasetGroup(torch.utils.data.ConcatDataset):
                 tokenizer, text_encoders, device, output_dtype, te_dtypes, cache_to_disk, is_main_process, batch_size
             )
 
-    def new_cache_text_encoder_outputs(self, models: List[Any], is_main_process: bool):
+    def new_cache_text_encoder_outputs(self, models: List[Any], accelerator: Accelerator):
         for i, dataset in enumerate(self.datasets):
             logger.info(f"[Dataset {i}]")
-            dataset.new_cache_text_encoder_outputs(models, is_main_process)
+            dataset.new_cache_text_encoder_outputs(models, accelerator)
+        accelerator.wait_for_everyone()
 
     def set_caching_mode(self, caching_mode):
         for dataset in self.datasets:
@@ -2385,6 +2509,9 @@ class DatasetGroup(torch.utils.data.ConcatDataset):
     def verify_bucket_reso_steps(self, min_steps: int):
         for dataset in self.datasets:
             dataset.verify_bucket_reso_steps(min_steps)
+
+    def get_resolutions(self) -> List[Tuple[int, int]]:
+        return [(dataset.width, dataset.height) for dataset in self.datasets]
 
     def is_latent_cacheable(self) -> bool:
         return all([dataset.is_latent_cacheable() for dataset in self.datasets])
@@ -2519,7 +2646,9 @@ def debug_dataset(train_dataset, show_input_ids=False):
                     f'{ik}, size: {train_dataset.image_data[ik].image_size}, loss weight: {lw}, caption: "{cap}", original size: {orgsz}, crop top left: {crptl}, target size: {trgsz}, flipped: {flpdz}'
                 )
                 if "network_multipliers" in example:
-                    print(f"network multiplier: {example['network_multipliers'][j]}")
+                    logger.info(f"network multiplier: {example['network_multipliers'][j]}")
+                if "custom_attributes" in example:
+                    logger.info(f"custom attributes: {example['custom_attributes'][j]}")
 
                 # if show_input_ids:
                 #     logger.info(f"input ids: {iid}")
@@ -3736,7 +3865,16 @@ def add_training_arguments(parser: argparse.ArgumentParser, support_dreambooth: 
         "--huber_c",
         type=float,
         default=0.1,
-        help="The huber loss parameter. Only used if one of the huber loss modes (huber or smooth l1) is selected with loss_type. default is 0.1 / Huber損失のパラメータ。loss_typeがhuberまたはsmooth l1の場合に有効。デフォルトは0.1",
+        help="The Huber loss decay parameter. Only used if one of the huber loss modes (huber or smooth l1) is selected with loss_type. default is 0.1"
+        " / Huber損失の減衰パラメータ。loss_typeがhuberまたはsmooth l1の場合に有効。デフォルトは0.1",
+    )
+
+    parser.add_argument(
+        "--huber_scale",
+        type=float,
+        default=1.0,
+        help="The Huber loss scale parameter. Only used if one of the huber loss modes (huber or smooth l1) is selected with loss_type. default is 1.0"
+        " / Huber損失のスケールパラメータ。loss_typeがhuberまたはsmooth l1の場合に有効。デフォルトは1.0",
     )
 
     parser.add_argument(
@@ -3860,6 +3998,72 @@ def add_masked_loss_arguments(parser: argparse.ArgumentParser):
     )
 
 
+def add_dit_training_arguments(parser: argparse.ArgumentParser):
+    # Text encoder related arguments
+    parser.add_argument(
+        "--cache_text_encoder_outputs", action="store_true", help="cache text encoder outputs / text encoderの出力をキャッシュする"
+    )
+    parser.add_argument(
+        "--cache_text_encoder_outputs_to_disk",
+        action="store_true",
+        help="cache text encoder outputs to disk / text encoderの出力をディスクにキャッシュする",
+    )
+    parser.add_argument(
+        "--text_encoder_batch_size",
+        type=int,
+        default=None,
+        help="text encoder batch size (default: None, use dataset's batch size)"
+        + " / text encoderのバッチサイズ（デフォルト: None, データセットのバッチサイズを使用）",
+    )
+
+    # Model loading optimization
+    parser.add_argument(
+        "--disable_mmap_load_safetensors",
+        action="store_true",
+        help="disable mmap load for safetensors. Speed up model loading in WSL environment / safetensorsのmmapロードを無効にする。WSL環境等でモデル読み込みを高速化できる",
+    )
+
+    # Training arguments. partial copy from Diffusers
+    parser.add_argument(
+        "--weighting_scheme",
+        type=str,
+        default="uniform",
+        choices=["sigma_sqrt", "logit_normal", "mode", "cosmap", "none", "uniform"],
+        help="weighting scheme for timestep distribution. Default is uniform, uniform and none are the same behavior"
+        " / タイムステップ分布の重み付けスキーム、デフォルトはuniform、uniform と none は同じ挙動",
+    )
+    parser.add_argument(
+        "--logit_mean",
+        type=float,
+        default=0.0,
+        help="mean to use when using the `'logit_normal'` weighting scheme / `'logit_normal'`重み付けスキームを使用する場合の平均",
+    )
+    parser.add_argument(
+        "--logit_std",
+        type=float,
+        default=1.0,
+        help="std to use when using the `'logit_normal'` weighting scheme / `'logit_normal'`重み付けスキームを使用する場合のstd",
+    )
+    parser.add_argument(
+        "--mode_scale",
+        type=float,
+        default=1.29,
+        help="Scale of mode weighting scheme. Only effective when using the `'mode'` as the `weighting_scheme` / モード重み付けスキームのスケール",
+    )
+
+    # offloading
+    parser.add_argument(
+        "--blocks_to_swap",
+        type=int,
+        default=None,
+        help="[EXPERIMENTAL] "
+        "Sets the number of blocks to swap during the forward and backward passes."
+        "Increasing this number lowers the overall VRAM used during training at the expense of training speed (s/it)."
+        " / 順伝播および逆伝播中にスワップするブロックの数を設定します。"
+        "この数を増やすと、トレーニング中のVRAM使用量が減りますが、トレーニング速度（s/it）も低下します。",
+    )
+
+
 def get_sanitized_config_or_none(args: argparse.Namespace):
     # if `--log_config` is enabled, return args for logging. if not, return None.
     # when `--log_config is enabled, filter out sensitive values from args
@@ -3950,20 +4154,20 @@ def verify_command_line_training_args(args: argparse.Namespace):
         )
 
 
+def enable_high_vram(args: argparse.Namespace):
+    if args.highvram:
+        logger.info("highvram is enabled / highvramが有効です")
+        global HIGH_VRAM
+        HIGH_VRAM = True
+
+
 def verify_training_args(args: argparse.Namespace):
     r"""
     Verify training arguments. Also reflect highvram option to global variable
     学習用引数を検証する。あわせて highvram オプションの指定をグローバル変数に反映する
     """
-    if args.highvram:
-        print("highvram is enabled / highvramが有効です")
-        global HIGH_VRAM
-        HIGH_VRAM = True
+    enable_high_vram(args)
 
-    if args.v_parameterization and not args.v2:
-        logger.warning(
-            "v_parameterization should be with v2 not v1 or sdxl / v1やsdxlでv_parameterizationを使用することは想定されていません"
-        )
     if args.v2 and args.clip_skip is not None:
         logger.warning("v2 with clip_skip will be unexpected / v2でclip_skipを使用することは想定されていません")
 
@@ -4123,12 +4327,30 @@ def add_dataset_arguments(
         help="cache latents to disk to reduce VRAM usage (augmentations must be disabled) / VRAM削減のためにlatentをディスクにcacheする（augmentationは使用不可）",
     )
     parser.add_argument(
+        "--skip_cache_check",
+        action="store_true",
+        help="skip the content validation of cache (latent and text encoder output). Cache file existence check is always performed, and cache processing is performed if the file does not exist"
+        " / cacheの内容の検証をスキップする（latentとテキストエンコーダの出力）。キャッシュファイルの存在確認は常に行われ、ファイルがなければキャッシュ処理が行われる",
+    )
+    parser.add_argument(
         "--enable_bucket",
         action="store_true",
         help="enable buckets for multi aspect ratio training / 複数解像度学習のためのbucketを有効にする",
     )
-    parser.add_argument("--min_bucket_reso", type=int, default=256, help="minimum resolution for buckets / bucketの最小解像度")
-    parser.add_argument("--max_bucket_reso", type=int, default=1024, help="maximum resolution for buckets / bucketの最大解像度")
+    parser.add_argument(
+        "--min_bucket_reso",
+        type=int,
+        default=256,
+        help="minimum resolution for buckets, must be divisible by bucket_reso_steps "
+        " / bucketの最小解像度、bucket_reso_stepsで割り切れる必要があります",
+    )
+    parser.add_argument(
+        "--max_bucket_reso",
+        type=int,
+        default=1024,
+        help="maximum resolution for buckets, must be divisible by bucket_reso_steps "
+        " / bucketの最大解像度、bucket_reso_stepsで割り切れる必要があります",
+    )
     parser.add_argument(
         "--bucket_reso_steps",
         type=int,
@@ -4399,6 +4621,7 @@ def get_optimizer(args, trainable_params):
 
     lr = args.learning_rate
     optimizer = None
+    optimizer_class = None
 
     if optimizer_type == "Lion".lower():
         try:
@@ -4931,10 +5154,19 @@ def prepare_accelerator(args: argparse.Namespace):
     dynamo_backend = "NO"
     if args.torch_compile:
         dynamo_backend = args.dynamo_backend
-        print(f"torch.compile is used with {dynamo_backend} backend")
 
-    kwargs_handlers = (
-        InitProcessGroupKwargs(timeout=datetime.timedelta(minutes=args.ddp_timeout)) if args.ddp_timeout else None,
+    kwargs_handlers = [
+        (
+            InitProcessGroupKwargs(
+                backend="gloo" if os.name == "nt" or not torch.cuda.is_available() else "nccl",
+                init_method=(
+                    "env://?use_libuv=False" if os.name == "nt" and Version(torch.__version__) >= Version("2.4.0") else None
+                ),
+                timeout=datetime.timedelta(minutes=args.ddp_timeout) if args.ddp_timeout else None,
+            )
+            if torch.cuda.device_count() > 1
+            else None
+        ),
         (
             DistributedDataParallelKwargs(
                 gradient_as_bucket_view=args.ddp_gradient_as_bucket_view, static_graph=args.ddp_static_graph
@@ -4942,8 +5174,8 @@ def prepare_accelerator(args: argparse.Namespace):
             if args.ddp_gradient_as_bucket_view or args.ddp_static_graph
             else None
         ),
-    )
-    kwargs_handlers = list(filter(lambda x: x is not None, kwargs_handlers))
+    ]
+    kwargs_handlers = [i for i in kwargs_handlers if i is not None]
     deepspeed_plugin = deepspeed_utils.prepare_deepspeed_plugin(args)
 
     accelerator = Accelerator(
@@ -5512,29 +5744,10 @@ def save_sd_model_on_train_end_common(
             huggingface_util.upload(args, out_dir, "/" + model_name, force_sync_upload=True)
 
 
-def get_timesteps_and_huber_c(args, min_timestep, max_timestep, noise_scheduler, b_size, device):
+def get_timesteps(min_timestep, max_timestep, b_size, device):
     timesteps = torch.randint(min_timestep, max_timestep, (b_size,), device="cpu")
-
-    if args.loss_type == "huber" or args.loss_type == "smooth_l1":
-        if args.huber_schedule == "exponential":
-            alpha = -math.log(args.huber_c) / noise_scheduler.config.num_train_timesteps
-            huber_c = torch.exp(-alpha * timesteps)
-        elif args.huber_schedule == "snr":
-            alphas_cumprod = torch.index_select(noise_scheduler.alphas_cumprod, 0, timesteps)
-            sigmas = ((1.0 - alphas_cumprod) / alphas_cumprod) ** 0.5
-            huber_c = (1 - args.huber_c) / (1 + sigmas) ** 2 + args.huber_c
-        elif args.huber_schedule == "constant":
-            huber_c = torch.full((b_size,), args.huber_c)
-        else:
-            raise NotImplementedError(f"Unknown Huber loss schedule {args.huber_schedule}!")
-        huber_c = huber_c.to(device)
-    elif args.loss_type == "l2":
-        huber_c = None  # may be anything, as it's not used
-    else:
-        raise NotImplementedError(f"Unknown loss type {args.loss_type}")
-
     timesteps = timesteps.long().to(device)
-    return timesteps, huber_c
+    return timesteps
 
 
 def get_noise_noisy_latents_and_timesteps(args, noise_scheduler, latents):
@@ -5556,7 +5769,7 @@ def get_noise_noisy_latents_and_timesteps(args, noise_scheduler, latents):
     min_timestep = 0 if args.min_timestep is None else args.min_timestep
     max_timestep = noise_scheduler.config.num_train_timesteps if args.max_timestep is None else args.max_timestep
 
-    timesteps, huber_c = get_timesteps_and_huber_c(args, min_timestep, max_timestep, noise_scheduler, b_size, latents.device)
+    timesteps = get_timesteps(min_timestep, max_timestep, b_size, latents.device)
 
     # Add noise to the latents according to the noise magnitude at each timestep
     # (this is the forward diffusion process)
@@ -5569,11 +5782,34 @@ def get_noise_noisy_latents_and_timesteps(args, noise_scheduler, latents):
     else:
         noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
-    return noise, noisy_latents, timesteps, huber_c
+    return noise, noisy_latents, timesteps
+
+
+def get_huber_threshold_if_needed(args, timesteps: torch.Tensor, noise_scheduler) -> Optional[torch.Tensor]:
+    if not (args.loss_type == "huber" or args.loss_type == "smooth_l1"):
+        return None
+
+    b_size = timesteps.shape[0]
+    if args.huber_schedule == "exponential":
+        alpha = -math.log(args.huber_c) / noise_scheduler.config.num_train_timesteps
+        result = torch.exp(-alpha * timesteps) * args.huber_scale
+    elif args.huber_schedule == "snr":
+        if not hasattr(noise_scheduler, "alphas_cumprod"):
+            raise NotImplementedError("Huber schedule 'snr' is not supported with the current model.")
+        alphas_cumprod = torch.index_select(noise_scheduler.alphas_cumprod, 0, timesteps.cpu())
+        sigmas = ((1.0 - alphas_cumprod) / alphas_cumprod) ** 0.5
+        result = (1 - args.huber_c) / (1 + sigmas) ** 2 + args.huber_c
+        result = result.to(timesteps.device)
+    elif args.huber_schedule == "constant":
+        result = torch.full((b_size,), args.huber_c * args.huber_scale, device=timesteps.device)
+    else:
+        raise NotImplementedError(f"Unknown Huber loss schedule {args.huber_schedule}!")
+
+    return result
 
 
 def conditional_loss(
-    model_pred: torch.Tensor, target: torch.Tensor, reduction: str, loss_type: str, huber_c: Optional[torch.Tensor]
+    model_pred: torch.Tensor, target: torch.Tensor, loss_type: str, reduction: str, huber_c: Optional[torch.Tensor] = None
 ):
     if loss_type == "l2":
         loss = torch.nn.functional.mse_loss(model_pred, target, reduction=reduction)
@@ -5594,7 +5830,7 @@ def conditional_loss(
         elif reduction == "sum":
             loss = torch.sum(loss)
     else:
-        raise NotImplementedError(f"Unsupported Loss Type {loss_type}")
+        raise NotImplementedError(f"Unsupported Loss Type: {loss_type}")
     return loss
 
 
@@ -5738,6 +5974,37 @@ def line_to_prompt_dict(line: str) -> dict:
     return prompt_dict
 
 
+def load_prompts(prompt_file: str) -> List[Dict]:
+    # read prompts
+    if prompt_file.endswith(".txt"):
+        with open(prompt_file, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        prompts = [line.strip() for line in lines if len(line.strip()) > 0 and line[0] != "#"]
+    elif prompt_file.endswith(".toml"):
+        with open(prompt_file, "r", encoding="utf-8") as f:
+            data = toml.load(f)
+        prompts = [dict(**data["prompt"], **subset) for subset in data["prompt"]["subset"]]
+    elif prompt_file.endswith(".json"):
+        with open(prompt_file, "r", encoding="utf-8") as f:
+            prompts = json.load(f)
+
+    # preprocess prompts
+    for i in range(len(prompts)):
+        prompt_dict = prompts[i]
+        if isinstance(prompt_dict, str):
+            from library.train_util import line_to_prompt_dict
+
+            prompt_dict = line_to_prompt_dict(prompt_dict)
+            prompts[i] = prompt_dict
+        assert isinstance(prompt_dict, dict)
+
+        # Adds an enumerator to the dict based on prompt position. Used later to name image files. Also cleanup of extra data in original prompt dict.
+        prompt_dict["enum"] = i
+        prompt_dict.pop("subset", None)
+
+    return prompts
+
+
 def sample_images_common(
     pipe_class,
     accelerator: Accelerator,
@@ -5802,11 +6069,7 @@ def sample_images_common(
         with open(args.sample_prompts, "r", encoding="utf-8") as f:
             prompts = json.load(f)
 
-    # schedulers: dict = {}  cannot find where this is used
-    default_scheduler = get_my_scheduler(
-        sample_sampler=args.sample_sampler,
-        v_parameterization=args.v_parameterization,
-    )
+    default_scheduler = get_my_scheduler(sample_sampler=args.sample_sampler, v_parameterization=args.v_parameterization)
 
     pipeline = pipe_class(
         text_encoder=text_encoder,
@@ -5867,15 +6130,12 @@ def sample_images_common(
     # clear pipeline and cache to reduce vram usage
     del pipeline
 
-    # I'm not sure which of these is the correct way to clear the memory, but accelerator's device is used in the pipeline, so I'm using it here.
-    # with torch.cuda.device(torch.cuda.current_device()):
-    #     torch.cuda.empty_cache()
-    clean_memory_on_device(accelerator.device)
-
     torch.set_rng_state(rng_state)
     if torch.cuda.is_available() and cuda_rng_state is not None:
         torch.cuda.set_rng_state(cuda_rng_state)
     vae.to(org_vae_device)
+
+    clean_memory_on_device(accelerator.device)
 
 
 def sample_image_inference(

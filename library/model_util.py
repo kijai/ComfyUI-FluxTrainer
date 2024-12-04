@@ -1004,15 +1004,6 @@ def load_models_from_stable_diffusion_checkpoint(v2, ckpt_path, device="cpu", dt
     unet_config = create_unet_diffusers_config(v2, unet_use_linear_projection_in_v2)
     converted_unet_checkpoint = convert_ldm_unet_checkpoint(v2, state_dict, unet_config)
 
-    # convert keys of comfy saved models
-    first_key = next(iter(converted_unet_checkpoint))
-    if first_key.startswith("model.diffusion_model."):
-        # Remove the 'model.diffusion_model.' prefix from keys if it exists
-        converted_unet_checkpoint = {
-            key.replace("model.diffusion_model.", ""): value
-            for key, value in converted_unet_checkpoint.items()
-        }
-
     unet = UNet2DConditionModel(**unet_config).to(device)
     info = unet.load_state_dict(converted_unet_checkpoint)
     logger.info(f"loading u-net: {info}")
@@ -1335,6 +1326,14 @@ def make_bucket_resolutions(max_reso, min_size=256, max_size=1024, divisible=64)
         if height >= min_size:
             resos.add((width, height))
             resos.add((height, width))
+
+        # # make additional resos
+        # if width >= height and width - divisible >= min_size:
+        #   resos.add((width - divisible, height))
+        #   resos.add((height, width - divisible))
+        # if height >= width and height - divisible >= min_size:
+        #   resos.add((width, height - divisible))
+        #   resos.add((height - divisible, width))
 
         width += divisible
 

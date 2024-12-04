@@ -12,8 +12,26 @@ from diffusers.schedulers.scheduling_euler_ancestral_discrete import EulerAncest
 import cv2
 from PIL import Image
 import numpy as np
+from safetensors.torch import load_file
 
-
+def load_safetensors(
+    path: str, device: Union[str, torch.device], disable_mmap: bool = False, dtype: Optional[torch.dtype] = torch.float32
+):
+    if disable_mmap:
+        # return safetensors.torch.load(open(path, "rb").read())
+        # use experimental loader
+        #logger.info(f"Loading without mmap (experimental)")
+        state_dict = {}
+        with MemoryEfficientSafeOpen(path) as f:
+            for key in f.keys():
+                state_dict[key] = f.get_tensor(key).to(device, dtype=dtype)
+        return state_dict
+    else:
+        try:
+            return load_file(path, device=device)
+        except:
+            return load_file(path)  # prevent device invalid Error
+        
 def fire_in_thread(f, *args, **kwargs):
     threading.Thread(target=f, args=args, kwargs=kwargs).start()
 

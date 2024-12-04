@@ -141,7 +141,6 @@ class FluxTextEncoderOutputsCachingStrategy(TextEncoderOutputsCachingStrategy):
         txt_ids = data["txt_ids"]
         t5_attn_mask = data["t5_attn_mask"]
         # apply_t5_attn_mask should be same as self.apply_t5_attn_mask
-
         return [l_pooled, t5_out, txt_ids, t5_attn_mask]
 
     def cache_batch_outputs(
@@ -200,12 +199,9 @@ class FluxLatentsCachingStrategy(LatentsCachingStrategy):
     def __init__(self, cache_to_disk: bool, batch_size: int, skip_disk_cache_validity_check: bool) -> None:
         super().__init__(cache_to_disk, batch_size, skip_disk_cache_validity_check)
 
-    def get_image_size_from_disk_cache_path(self, absolute_path: str) -> Tuple[Optional[int], Optional[int]]:
-        npz_file = glob.glob(os.path.splitext(absolute_path)[0] + "_*" + FluxLatentsCachingStrategy.FLUX_LATENTS_NPZ_SUFFIX)
-        if len(npz_file) == 0:
-            return None, None
-        w, h = os.path.splitext(npz_file[0])[0].split("_")[-2].split("x")
-        return int(w), int(h)
+    @property
+    def cache_suffix(self) -> str:
+        return FluxLatentsCachingStrategy.FLUX_LATENTS_NPZ_SUFFIX
 
     def get_latents_npz_path(self, absolute_path: str, image_size: Tuple[int, int]) -> str:
         return (
@@ -215,7 +211,7 @@ class FluxLatentsCachingStrategy(LatentsCachingStrategy):
         )
 
     def is_disk_cached_latents_expected(self, bucket_reso: Tuple[int, int], npz_path: str, flip_aug: bool, alpha_mask: bool):
-        return self._default_is_disk_cached_latents_expected(8, bucket_reso, npz_path, flip_aug, alpha_mask, True)
+        return self._default_is_disk_cached_latents_expected(8, bucket_reso, npz_path, flip_aug, alpha_mask, multi_resolution=True)
 
     def load_latents_from_disk(
         self, npz_path: str, bucket_reso: Tuple[int, int]
@@ -229,7 +225,7 @@ class FluxLatentsCachingStrategy(LatentsCachingStrategy):
         vae_dtype = vae.dtype
 
         self._default_cache_batch_latents(
-            encode_by_vae, vae_device, vae_dtype, image_infos, flip_aug, alpha_mask, random_crop, True
+            encode_by_vae, vae_device, vae_dtype, image_infos, flip_aug, alpha_mask, random_crop, multi_resolution=True
         )
 
         if not train_util.HIGH_VRAM:

@@ -285,7 +285,26 @@ class OptimizerConfigAdafactor:
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         
         return (kwargs,)
+    
+class FluxTrainerLossConfig:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "loss_type": (["l2", "huber","smooth_l1"], {"default": "huber", "tooltip": "The type of loss function to use"}),
+            "huber_schedule": (["snr", "exponential", "constant"], {"default": "exponential", "tooltip": "The scheduling method for Huber loss (constant, exponential, or SNR-based). Only used when loss_type is 'huber' or 'smooth_l1'. default is snr"}),
+            "huber_c": ("FLOAT",{"default": 0.25, "min": 0.0, "step": 0.01, "tooltip": "The Huber loss decay parameter. Only used if one of the huber loss modes (huber or smooth l1) is selected with loss_type. default is 0.1"}),
+            "huber_scale": ("FLOAT",{"default": 1.75, "min": 0.0, "step": 0.01, "tooltip": "The Huber loss scale parameter. Only used if one of the huber loss modes (huber or smooth l1) is selected with loss_type. default is 1.0"}),
+           },
+        }
 
+    RETURN_TYPES = ("ARGS",)
+    RETURN_NAMES = ("loss_args",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, **kwargs):
+        return (kwargs,)
+    
 class OptimizerConfigProdigy:
     @classmethod
     def INPUT_TYPES(s):
@@ -377,7 +396,7 @@ class InitFluxLoRATraining:
             "apply_t5_attn_mask": ("BOOLEAN", {"default": True, "tooltip": "apply t5 attention mask"}),
             "cache_latents": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
             "cache_text_encoder_outputs": (["disk", "memory", "disabled"], {"tooltip": "caches text encoder outputs"}),
-            "split_mode": ("BOOLEAN", {"default": False, "tooltip": "[EXPERIMENTAL] use split mode for Flux model, network arg `train_blocks=single` is required"}),
+            "blocks_to_swap": ("INT", {"default": 0, "tooltip": "Previously known as split_mode, number of blocks to swap to save memory, default to enable is 18"}),
             "weighting_scheme": (["logit_normal", "sigma_sqrt", "mode", "cosmap", "none"],),
             "logit_mean": ("FLOAT", {"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01, "tooltip": "mean to use when using the logit_normal weighting scheme"}),
             "logit_std": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "std to use when using the logit_normal weighting scheme"}),
@@ -402,6 +421,7 @@ class InitFluxLoRATraining:
                 "T5_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "text encoder learning rate"}),
                 "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
                 "gradient_checkpointing": (["enabled", "enabled_with_cpu_offloading", "disabled"], {"default": "enabled", "tooltip": "use gradient checkpointing"}),
+                "loss_args": ("ARGS", {"default": "", "tooltip": "loss args"}),
             },
             "hidden": {
                 "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"
@@ -414,8 +434,8 @@ class InitFluxLoRATraining:
     CATEGORY = "FluxTrainer"
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
-                      gradient_dtype, save_dtype, split_mode, additional_args=None, resume_args=None, train_text_encoder='disabled', 
-                      block_args=None, gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, T5_lr=0, **kwargs,):
+                      gradient_dtype, save_dtype, additional_args=None, resume_args=None, train_text_encoder='disabled', 
+                      block_args=None, gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, T5_lr=0, loss_args=None, **kwargs):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -488,7 +508,6 @@ class InitFluxLoRATraining:
             "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
             "fp8_base_unet": True if "fp8" in train_text_encoder else False,
             "disable_mmap_load_safetensors": False,
-            "split_mode": split_mode,
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
@@ -513,8 +532,7 @@ class InitFluxLoRATraining:
         
         if "T5" in train_text_encoder:
             additional_network_args.append("train_t5xxl=True")
-        if split_mode:
-            additional_network_args.append("train_blocks=single")
+       
         if block_args:
             additional_network_args.append(block_args["include"])
         
@@ -537,6 +555,9 @@ class InitFluxLoRATraining:
 
         config_dict.update(kwargs)
         config_dict.update(optimizer_settings)
+
+        if loss_args:
+            config_dict.update(loss_args)
 
         if resume_args:
             config_dict.update(resume_args)
@@ -1185,19 +1206,14 @@ class FluxTrainValidate:
         training_loop = network_trainer["training_loop"]
         network_trainer = network_trainer["network_trainer"]
 
-        params = (
-            network_trainer.accelerator, 
-            network_trainer.args, 
+        params = ( 
             network_trainer.current_epoch.value, 
             network_trainer.global_step,
-            network_trainer.unet,
-            network_trainer.vae,
-            network_trainer.text_encoder,
-            network_trainer.sample_prompts_te_outputs,
             validation_settings
         )
         network_trainer.optimizer_eval_fn()
-        image_tensors = network_trainer.sample_images(*params)
+        with torch.inference_mode(False):
+            image_tensors = network_trainer.sample_images(*params)
 
         trainer = {
             "network_trainer": network_trainer,
@@ -1704,6 +1720,7 @@ NODE_CLASS_MAPPINGS = {
     "TrainDatasetRegularization": TrainDatasetRegularization,
     "FluxTrainAndValidateLoop": FluxTrainAndValidateLoop,
     "OptimizerConfigProdigyPlusScheduleFree": OptimizerConfigProdigyPlusScheduleFree,
+    "FluxTrainerLossConfig": FluxTrainerLossConfig,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1729,4 +1746,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "TrainDatasetRegularization": "Train Dataset Regularization",
     "FluxTrainAndValidateLoop": "Flux Train And Validate Loop",
     "OptimizerConfigProdigyPlusScheduleFree": "Optimizer Config ProdigyPlusScheduleFree",
+    "FluxTrainerLossConfig": "Flux Trainer Loss Config",
 }
