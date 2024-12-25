@@ -35,9 +35,21 @@ logger = logging.getLogger(__name__)
 
 class FluxTrainModelSelect:
     @classmethod
+    def get_model_list(s):
+        # Get all model files from the unet directory
+        model_path = folder_paths.get_folder_paths("unet")
+        model_files = []
+        for p in model_path:
+            if os.path.exists(p):
+                for file in os.listdir(p):
+                    if file.endswith('.safetensors') or file.endswith('.ckpt') or file.endswith('.gguf'):
+                        model_files.append(file)
+        return model_files
+
+    @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-                    "transformer": (folder_paths.get_filename_list("unet"), ),
+                    "transformer": (s.get_model_list(), ),
                     "vae": (folder_paths.get_filename_list("vae"), ),
                     "clip_l": (folder_paths.get_filename_list("clip"), ),
                     "t5": (folder_paths.get_filename_list("clip"), ),
@@ -53,7 +65,6 @@ class FluxTrainModelSelect:
     CATEGORY = "FluxTrainer"
 
     def loadmodel(self, transformer, vae, clip_l, t5, lora_path=""):
-        
         transformer_path = folder_paths.get_full_path("unet", transformer)
         vae_path = folder_paths.get_full_path("vae", vae)
         clip_path = folder_paths.get_full_path("clip", clip_l)
