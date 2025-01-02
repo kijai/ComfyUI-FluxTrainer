@@ -1098,7 +1098,7 @@ class NetworkTrainer:
         self.remove_model = remove_model
         self.comfy_pbar = None
         
-        progress_bar = tqdm(range(args.max_train_steps - initial_step), smoothing=0, disable=False, desc="steps")
+        progress_bar = tqdm(range(args.max_train_steps - self.global_step), smoothing=0, disable=False, desc="steps")
         
         def training_loop(break_at_steps, epoch):
             steps_done = 0
