@@ -1006,6 +1006,17 @@ class NetworkTrainer:
         )
 
         self.loss_recorder = train_util.LossRecorder()
+        if args.resume:
+            lossfile = os.path.join(args.resume, "losslist.json")
+            if os.path.isfile(lossfile):
+                with open(lossfile, 'r') as f:
+                    self.loss_recorder.global_loss_list = json.load(f)
+                    accelerator.print("losslist loaded")
+            savepointfile = os.path.join(args.resume, "savepoints.json")
+            if os.path.isfile(savepointfile):
+                with open(savepointfile, 'r') as f:
+                    self.loss_recorder.savepoints = json.load(f)
+                    accelerator.print("savepointlist loaded")
         del train_dataset_group
 
         pbar.update(1)

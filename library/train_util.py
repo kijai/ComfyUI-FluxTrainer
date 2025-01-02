@@ -5410,7 +5410,7 @@ def save_and_remove_state_on_epoch_end(args: argparse.Namespace, accelerator, ep
             shutil.rmtree(state_dir_old)
 
 
-def save_and_remove_state_stepwise(args: argparse.Namespace, accelerator, step_no):
+def save_and_remove_state_stepwise(args: argparse.Namespace, accelerator, step_no, loss_recorder):
     model_name = default_if_none(args.output_name, DEFAULT_STEP_NAME)
 
     logger.info("")
@@ -5419,6 +5419,13 @@ def save_and_remove_state_stepwise(args: argparse.Namespace, accelerator, step_n
 
     state_dir = os.path.join(args.output_dir, STEP_STATE_NAME.format(model_name, step_no))
     accelerator.save_state(state_dir)
+    # save loss list
+    lossfile = os.path.join(state_dir, "losslist.json")
+    savepointfile = os.path.join(state_dir, "savepoints.json")
+    with open(lossfile, 'w') as f:
+        json.dump(loss_recorder.global_loss_list, f, indent=2)
+    with open(savepointfile, 'w') as f:
+        json.dump(loss_recorder.savepoints, f, indent=2)
     if args.save_state_to_huggingface:
         logger.info("uploading state to huggingface.")
         huggingface_util.upload(args, state_dir, "/" + STEP_STATE_NAME.format(model_name, step_no))
@@ -5445,7 +5452,13 @@ def save_state_on_train_end(args: argparse.Namespace, accelerator):
 
     state_dir = os.path.join(args.output_dir, LAST_STATE_NAME.format(model_name))
     accelerator.save_state(state_dir)
-
+    # save loss list
+    lossfile = os.path.join(state_dir, "losslist.json")
+    savepointfile = os.path.join(state_dir, "savepoints.json")
+    with open(lossfile, 'w') as f:
+        json.dump(loss_recorder.global_loss_list, f, indent=2)
+    with open(savepointfile, 'w') as f:
+        json.dump(loss_recorder.savepoints, f, indent=2)
     if args.save_state_to_huggingface:
         logger.info("uploading last state to huggingface.")
         huggingface_util.upload(args, state_dir, "/" + LAST_STATE_NAME.format(model_name))
@@ -6030,6 +6043,7 @@ class LossRecorder:
         self.loss_list: List[float] = []
         self.global_loss_list: List[float] = []
         self.loss_total: float = 0.0
+        self.savepoints: List[int] = []
 
     def add(self, *, epoch: int, step: int, global_step: int, loss: float) -> None:
         if epoch == 0:
@@ -6042,6 +6056,10 @@ class LossRecorder:
             self.loss_list[step] = loss
             self.global_loss_list.append(loss)
         self.loss_total += loss
+
+    def addsavepoint(self, step: int) -> None:
+        self.savepoints.append(step)
+
 
     @property
     def moving_average(self) -> float:

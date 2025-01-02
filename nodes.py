@@ -926,6 +926,9 @@ class FluxTrainAndValidateLoop:
     def save(self, network_trainer):
         ckpt_name = train_util.get_step_ckpt_name(network_trainer.args, "." + network_trainer.args.save_model_as, network_trainer.global_step)
         network_trainer.optimizer_eval_fn()
+        network_trainer.loss_recorder.addsavepoint(network_trainer.global_step)
+        if save_state:
+            train_util.save_and_remove_state_stepwise(network_trainer.args, network_trainer.accelerator, network_trainer.global_step, network_trainer.loss_recorder)
         network_trainer.save_model(ckpt_name, network_trainer.accelerator.unwrap_model(network_trainer.network), network_trainer.global_step, network_trainer.current_epoch.value + 1)
         network_trainer.optimizer_train_fn()
         print("Saving at step:", network_trainer.global_step)
@@ -1042,6 +1045,8 @@ class FluxTrainEnd:
 
             network_trainer.accelerator.end_training()
             network_trainer.optimizer_eval_fn()
+
+            network_trainer.loss_recorder.addsavepoint(network_trainer.global_step)
 
             if save_state:
                 train_util.save_state_on_train_end(network_trainer.args, network_trainer.accelerator)
@@ -1227,6 +1232,8 @@ class VisualizeLoss:
     def draw(self, network_trainer, window_size, plot_style, normalize_y, width, height, log_scale):
         import numpy as np
         loss_values = network_trainer["network_trainer"].loss_recorder.global_loss_list
+        savepoints = network_trainer["network_trainer"].loss_recorder.savepoints
+        del savepoints[-1]
 
         # Apply moving average
         def moving_average(values, window_size):
@@ -1242,9 +1249,14 @@ class VisualizeLoss:
 
         # Create a plot
         fig, ax = plt.subplots(figsize=(width_inches, height_inches))
-        ax.plot(loss_values, label='Training Loss')
+        ax.plot(range(window_size, len(loss_values) + window_size), loss_values, label='Training Loss')
+        plt.xlim(0,len(loss_values) + window_size - 1)
         ax.set_xlabel('Step')
         ax.set_ylabel('Loss')
+        #ax.set_xticks(savepoints, minor=False)
+        #ax.xaxis.grid(True, which='major')
+        for xpoint in savepoints:
+            ax.axvline(xpoint, linestyle=':', color='r')
         if normalize_y:
             plt.ylim(bottom=0)
         if log_scale:
