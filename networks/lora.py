@@ -11,7 +11,7 @@ from transformers import CLIPTextModel
 import numpy as np
 import torch
 import re
-from .utils import setup_logging
+from ..library.utils import setup_logging
 from ..library.sdxl_original_unet import SdxlUNet2DConditionModel
 
 setup_logging()

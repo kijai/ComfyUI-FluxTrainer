@@ -1,0 +1,3522 @@
+{
+  "last_node_id": 150,
+  "last_link_id": 281,
+  "nodes": [
+    {
+      "id": 48,
+      "type": "GetNode",
+      "pos": [
+        2630,
+        450
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 0,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VALSETTINGS",
+          "type": "VALSETTINGS",
+          "links": [
+            262
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_validation_settings",
+      "properties": {},
+      "widgets_values": [
+        "validation_settings"
+      ]
+    },
+    {
+      "id": 61,
+      "type": "PreviewImage",
+      "pos": [
+        3707,
+        610
+      ],
+      "size": [
+        809.35400390625,
+        458.6750793457031
+      ],
+      "flags": {},
+      "order": 50,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 269
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 63,
+      "type": "GetNode",
+      "pos": [
+        3706.7109375,
+        460
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 1,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VALSETTINGS",
+          "type": "VALSETTINGS",
+          "links": [
+            267
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_validation_settings",
+      "properties": {},
+      "widgets_values": [
+        "validation_settings"
+      ]
+    },
+    {
+      "id": 68,
+      "type": "GetNode",
+      "pos": [
+        4765.21875,
+        468.45684814453125
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 2,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VALSETTINGS",
+          "type": "VALSETTINGS",
+          "links": [
+            272
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_validation_settings",
+      "properties": {},
+      "widgets_values": [
+        "validation_settings"
+      ]
+    },
+    {
+      "id": 70,
+      "type": "VisualizeLoss",
+      "pos": [
+        5586,
+        -246
+      ],
+      "size": [
+        254.40000915527344,
+        198
+      ],
+      "flags": {},
+      "order": 56,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 273
+        }
+      ],
+      "outputs": [
+        {
+          "name": "plot",
+          "type": "IMAGE",
+          "links": [
+            138
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "loss_list",
+          "type": "FLOAT",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VisualizeLoss"
+      },
+      "widgets_values": [
+        "ggplot",
+        1000,
+        true,
+        768,
+        512,
+        false
+      ]
+    },
+    {
+      "id": 73,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        6270,
+        660
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "flags": {},
+      "order": 66,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 136,
+          "dir": 3
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Display Any (rgthree)"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 78,
+      "type": "AddLabel",
+      "pos": [
+        2023,
+        1177
+      ],
+      "size": [
+        315,
+        274
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 33,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 251
+        },
+        {
+          "name": "caption",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "caption"
+          }
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 111,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            200
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AddLabel"
+      },
+      "widgets_values": [
+        10,
+        2,
+        48,
+        32,
+        "white",
+        "black",
+        "FreeMono.ttf",
+        "Text",
+        "up",
+        ""
+      ]
+    },
+    {
+      "id": 79,
+      "type": "SomethingToString",
+      "pos": [
+        1815,
+        1177
+      ],
+      "size": [
+        315,
+        82
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 28,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input",
+          "type": "*",
+          "link": 220
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            111
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SomethingToString"
+      },
+      "widgets_values": [
+        "steps ",
+        ""
+      ]
+    },
+    {
+      "id": 80,
+      "type": "AddLabel",
+      "pos": [
+        2982,
+        1177
+      ],
+      "size": [
+        315,
+        274
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 42,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 265
+        },
+        {
+          "name": "caption",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "caption"
+          }
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 117,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            201
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AddLabel"
+      },
+      "widgets_values": [
+        10,
+        2,
+        48,
+        32,
+        "white",
+        "black",
+        "FreeMono.ttf",
+        "Text",
+        "up",
+        ""
+      ]
+    },
+    {
+      "id": 81,
+      "type": "SomethingToString",
+      "pos": [
+        2774,
+        1177
+      ],
+      "size": [
+        315,
+        82
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 36,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input",
+          "type": "*",
+          "link": 235
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            117
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SomethingToString"
+      },
+      "widgets_values": [
+        "steps ",
+        ""
+      ]
+    },
+    {
+      "id": 82,
+      "type": "SomethingToString",
+      "pos": [
+        3909,
+        1177
+      ],
+      "size": [
+        315,
+        82
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 45,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input",
+          "type": "*",
+          "link": 234
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            121
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SomethingToString"
+      },
+      "widgets_values": [
+        "steps ",
+        ""
+      ]
+    },
+    {
+      "id": 83,
+      "type": "AddLabel",
+      "pos": [
+        4130,
+        1177
+      ],
+      "size": [
+        315,
+        274
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 51,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 270
+        },
+        {
+          "name": "caption",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "caption"
+          }
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 121,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            204
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AddLabel"
+      },
+      "widgets_values": [
+        10,
+        2,
+        48,
+        32,
+        "white",
+        "black",
+        "FreeMono.ttf",
+        "Text",
+        "up",
+        ""
+      ]
+    },
+    {
+      "id": 84,
+      "type": "SomethingToString",
+      "pos": [
+        4963,
+        1177
+      ],
+      "size": [
+        315,
+        82
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 53,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "input",
+          "type": "*",
+          "link": 215
+        }
+      ],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            124
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SomethingToString"
+      },
+      "widgets_values": [
+        "steps ",
+        ""
+      ]
+    },
+    {
+      "id": 85,
+      "type": "AddLabel",
+      "pos": [
+        5171,
+        1177
+      ],
+      "size": [
+        315,
+        274
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 59,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 276
+        },
+        {
+          "name": "caption",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "caption"
+          }
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 124,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            207
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AddLabel"
+      },
+      "widgets_values": [
+        10,
+        2,
+        48,
+        32,
+        "white",
+        "black",
+        "FreeMono.ttf",
+        "Text",
+        "up",
+        ""
+      ]
+    },
+    {
+      "id": 89,
+      "type": "UploadToHuggingFace",
+      "pos": [
+        5900,
+        660
+      ],
+      "size": [
+        315,
+        178
+      ],
+      "flags": {},
+      "order": 62,
+      "mode": 2,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": null
+        },
+        {
+          "name": "source_path",
+          "type": "STRING",
+          "link": 230,
+          "widget": {
+            "name": "source_path"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "status",
+          "type": "STRING",
+          "links": [
+            136
+          ],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "UploadToHuggingFace"
+      },
+      "widgets_values": [
+        "",
+        "",
+        "",
+        true,
+        ""
+      ]
+    },
+    {
+      "id": 90,
+      "type": "SaveImage",
+      "pos": [
+        5877,
+        -60
+      ],
+      "size": [
+        574.23046875,
+        414.46881103515625
+      ],
+      "flags": {},
+      "order": 60,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 138
+        }
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "flux_lora_loss_plot"
+      ]
+    },
+    {
+      "id": 105,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        483,
+        -811
+      ],
+      "size": [
+        1073.7608642578125,
+        492.8503112792969
+      ],
+      "flags": {},
+      "order": 25,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 259,
+          "dir": 3
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Display Any (rgthree)"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 113,
+      "type": "Note",
+      "pos": [
+        -732,
+        63
+      ],
+      "size": [
+        462.68292236328125,
+        79.98078918457031
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "For multiresolution training, input same source directory with different dataset resolution. From what I hear, Flux likes multiple resolutions.\n\nFor single resolution training, just add single dataset."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 117,
+      "type": "ImageConcatFromBatch",
+      "pos": [
+        6690,
+        410
+      ],
+      "size": [
+        315,
+        106
+      ],
+      "flags": {},
+      "order": 21,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 195
+        },
+        {
+          "name": "num_columns",
+          "type": "INT",
+          "link": 199,
+          "widget": {
+            "name": "num_columns"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            210
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageConcatFromBatch"
+      },
+      "widgets_values": [
+        3,
+        false,
+        4096
+      ]
+    },
+    {
+      "id": 119,
+      "type": "ImageBatchMulti",
+      "pos": [
+        6820,
+        180
+      ],
+      "size": [
+        210,
+        142
+      ],
+      "flags": {},
+      "order": 18,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image_1",
+          "type": "IMAGE",
+          "link": 202
+        },
+        {
+          "name": "image_2",
+          "type": "IMAGE",
+          "link": 203
+        },
+        {
+          "name": "image_3",
+          "type": "IMAGE",
+          "link": 206
+        },
+        {
+          "name": "image_4",
+          "type": "IMAGE",
+          "link": 208
+        }
+      ],
+      "outputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "links": [
+            195
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {},
+      "widgets_values": [
+        4,
+        null
+      ]
+    },
+    {
+      "id": 120,
+      "type": "GetImageSizeAndCount",
+      "pos": [
+        6830,
+        120
+      ],
+      "size": [
+        210,
+        86
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 17,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 209
+        }
+      ],
+      "outputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "links": [],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "1024 width",
+          "type": "INT",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "1072 height",
+          "type": "INT",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "1 count",
+          "type": "INT",
+          "links": [
+            199
+          ],
+          "slot_index": 3,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "GetImageSizeAndCount"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 121,
+      "type": "SetNode",
+      "pos": [
+        2170,
+        1177
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 37,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "link": 200
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "title": "Set_Sampler1",
+      "properties": {
+        "previousName": "Sampler1"
+      },
+      "widgets_values": [
+        "Sampler1"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 122,
+      "type": "SetNode",
+      "pos": [
+        3128,
+        1177
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 46,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "link": 201
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "title": "Set_Sampler2",
+      "properties": {
+        "previousName": "Sampler2"
+      },
+      "widgets_values": [
+        "Sampler2"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 123,
+      "type": "GetNode",
+      "pos": [
+        6640,
+        190
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 4,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            202,
+            209
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_Sampler1",
+      "properties": {},
+      "widgets_values": [
+        "Sampler1"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 124,
+      "type": "GetNode",
+      "pos": [
+        6640,
+        230
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 5,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            203
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_Sampler2",
+      "properties": {},
+      "widgets_values": [
+        "Sampler2"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 125,
+      "type": "SetNode",
+      "pos": [
+        4278,
+        1177
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 54,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "link": 204
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": [],
+          "slot_index": 0
+        }
+      ],
+      "title": "Set_Sampler3",
+      "properties": {
+        "previousName": "Sampler3"
+      },
+      "widgets_values": [
+        "Sampler3"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 126,
+      "type": "GetNode",
+      "pos": [
+        6650,
+        280
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 6,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            206
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_Sampler3",
+      "properties": {},
+      "widgets_values": [
+        "Sampler3"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 127,
+      "type": "SetNode",
+      "pos": [
+        5319,
+        1177
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 64,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "link": 207
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "title": "Set_Sampler4",
+      "properties": {
+        "previousName": "Sampler4"
+      },
+      "widgets_values": [
+        "Sampler4"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 128,
+      "type": "GetNode",
+      "pos": [
+        6640,
+        330
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 7,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            208
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_Sampler4",
+      "properties": {},
+      "widgets_values": [
+        "Sampler4"
+      ],
+      "color": "#2a363b",
+      "bgcolor": "#3f5159"
+    },
+    {
+      "id": 131,
+      "type": "Note",
+      "pos": [
+        478,
+        -884
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {},
+      "order": 8,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "sanity check that all the args are chosen correctly"
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 46,
+      "type": "PreviewImage",
+      "pos": [
+        2654,
+        609
+      ],
+      "size": [
+        850.0181274414062,
+        452.6767578125
+      ],
+      "flags": {},
+      "order": 41,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 264
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 66,
+      "type": "PreviewImage",
+      "pos": [
+        4785,
+        628
+      ],
+      "size": [
+        850.0181274414062,
+        452.6767578125
+      ],
+      "flags": {},
+      "order": 58,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 275
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 116,
+      "type": "Note",
+      "pos": [
+        776,
+        -111
+      ],
+      "size": [
+        308.08209228515625,
+        78.06562805175781
+      ],
+      "flags": {},
+      "order": 9,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [],
+      "properties": {
+        "text": ""
+      },
+      "widgets_values": [
+        "Validation sampling settings are set here for all the sampler nodes."
+      ],
+      "color": "#432",
+      "bgcolor": "#653"
+    },
+    {
+      "id": 14,
+      "type": "FluxTrainSave",
+      "pos": [
+        1988,
+        256
+      ],
+      "size": [
+        393,
+        122
+      ],
+      "flags": {},
+      "order": 27,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 218
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            247
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "lora_path",
+          "type": "STRING",
+          "links": [],
+          "slot_index": 1,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainSave"
+      },
+      "widgets_values": [
+        false,
+        false
+      ]
+    },
+    {
+      "id": 40,
+      "type": "GetNode",
+      "pos": [
+        1546,
+        433
+      ],
+      "size": [
+        277.0899353027344,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 10,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "VALSETTINGS",
+          "type": "VALSETTINGS",
+          "links": [
+            248
+          ],
+          "slot_index": 0
+        }
+      ],
+      "title": "Get_validation_settings",
+      "properties": {},
+      "widgets_values": [
+        "validation_settings"
+      ]
+    },
+    {
+      "id": 47,
+      "type": "FluxTrainSave",
+      "pos": [
+        3114,
+        323
+      ],
+      "size": [
+        393,
+        122
+      ],
+      "flags": {},
+      "order": 35,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 222
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            261
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "lora_path",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainSave"
+      },
+      "widgets_values": [
+        false,
+        false
+      ]
+    },
+    {
+      "id": 129,
+      "type": "AddLabel",
+      "pos": [
+        6937,
+        60
+      ],
+      "size": [
+        315,
+        274
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 61,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 210
+        },
+        {
+          "name": "caption",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "caption"
+          }
+        },
+        {
+          "name": "text",
+          "type": "STRING",
+          "link": 231,
+          "widget": {
+            "name": "text"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            214
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "AddLabel"
+      },
+      "widgets_values": [
+        10,
+        2,
+        48,
+        32,
+        "white",
+        "black",
+        "FreeMono.ttf",
+        "Text",
+        "up",
+        ""
+      ]
+    },
+    {
+      "id": 62,
+      "type": "FluxTrainSave",
+      "pos": [
+        4202,
+        331
+      ],
+      "size": [
+        393,
+        122
+      ],
+      "flags": {},
+      "order": 44,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 224
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            266
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "lora_path",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainSave"
+      },
+      "widgets_values": [
+        false,
+        false
+      ]
+    },
+    {
+      "id": 134,
+      "type": "FluxTrainSave",
+      "pos": [
+        5275,
+        328
+      ],
+      "size": [
+        393,
+        122
+      ],
+      "flags": {},
+      "order": 52,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 232
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            271
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "lora_path",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainSave"
+      },
+      "widgets_values": [
+        false,
+        false
+      ]
+    },
+    {
+      "id": 97,
+      "type": "VisualizeLoss",
+      "pos": [
+        1700,
+        -650
+      ],
+      "size": [
+        303.6300048828125,
+        198
+      ],
+      "flags": {},
+      "order": 26,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 162
+        }
+      ],
+      "outputs": [
+        {
+          "name": "plot",
+          "type": "IMAGE",
+          "links": [
+            161
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "loss_list",
+          "type": "FLOAT",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VisualizeLoss"
+      },
+      "widgets_values": [
+        "seaborn-v0_8-dark-palette",
+        100,
+        true,
+        768,
+        512,
+        false
+      ]
+    },
+    {
+      "id": 99,
+      "type": "VisualizeLoss",
+      "pos": [
+        2950,
+        -650
+      ],
+      "size": [
+        254.40000915527344,
+        198
+      ],
+      "flags": {},
+      "order": 34,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 164
+        }
+      ],
+      "outputs": [
+        {
+          "name": "plot",
+          "type": "IMAGE",
+          "links": [
+            163
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "loss_list",
+          "type": "FLOAT",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VisualizeLoss"
+      },
+      "widgets_values": [
+        "seaborn-v0_8-dark-palette",
+        100,
+        true,
+        768,
+        512,
+        false
+      ]
+    },
+    {
+      "id": 101,
+      "type": "VisualizeLoss",
+      "pos": [
+        4090,
+        -650
+      ],
+      "size": [
+        254.40000915527344,
+        198
+      ],
+      "flags": {},
+      "order": 43,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 166
+        }
+      ],
+      "outputs": [
+        {
+          "name": "plot",
+          "type": "IMAGE",
+          "links": [
+            165
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "loss_list",
+          "type": "FLOAT",
+          "links": null,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "VisualizeLoss"
+      },
+      "widgets_values": [
+        "seaborn-v0_8-dark-palette",
+        100,
+        true,
+        768,
+        512,
+        false
+      ]
+    },
+    {
+      "id": 98,
+      "type": "SaveImage",
+      "pos": [
+        1680,
+        -340
+      ],
+      "size": [
+        645.9608764648438,
+        439.37261962890625
+      ],
+      "flags": {},
+      "order": 29,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 161
+        }
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "flux_lora_loss_plot"
+      ]
+    },
+    {
+      "id": 100,
+      "type": "SaveImage",
+      "pos": [
+        2990,
+        -340
+      ],
+      "size": [
+        574.23046875,
+        414.46881103515625
+      ],
+      "flags": {},
+      "order": 38,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 163
+        }
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "flux_lora_loss_plot"
+      ]
+    },
+    {
+      "id": 102,
+      "type": "SaveImage",
+      "pos": [
+        4080,
+        -340
+      ],
+      "size": [
+        574.23046875,
+        414.46881103515625
+      ],
+      "flags": {},
+      "order": 47,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 165
+        }
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "flux_lora_loss_plot"
+      ]
+    },
+    {
+      "id": 74,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        6275,
+        492
+      ],
+      "size": [
+        358.62896728515625,
+        76
+      ],
+      "flags": {},
+      "order": 63,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 236,
+          "dir": 3
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "Display Any (rgthree)"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 133,
+      "type": "FluxTrainEnd",
+      "pos": [
+        5870,
+        492
+      ],
+      "size": [
+        317.4000244140625,
+        98
+      ],
+      "flags": {},
+      "order": 57,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 274
+        }
+      ],
+      "outputs": [
+        {
+          "name": "lora_name",
+          "type": "STRING",
+          "links": [
+            231
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "metadata",
+          "type": "STRING",
+          "links": null,
+          "shape": 3
+        },
+        {
+          "name": "lora_path",
+          "type": "STRING",
+          "links": [
+            230,
+            236
+          ],
+          "slot_index": 2,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainEnd"
+      },
+      "widgets_values": [
+        false
+      ],
+      "color": "#322",
+      "bgcolor": "#533"
+    },
+    {
+      "id": 130,
+      "type": "SaveImage",
+      "pos": [
+        7132,
+        121
+      ],
+      "size": [
+        619.8221435546875,
+        714.4110107421875
+      ],
+      "flags": {},
+      "order": 65,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 214
+        }
+      ],
+      "outputs": [],
+      "properties": {},
+      "widgets_values": [
+        "flux_lora_trainer_sheet"
+      ]
+    },
+    {
+      "id": 137,
+      "type": "TrainDatasetGeneralConfig",
+      "pos": [
+        -1122,
+        203
+      ],
+      "size": [
+        316.3266296386719,
+        202
+      ],
+      "flags": {},
+      "order": 11,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "dataset_general",
+          "type": "JSON",
+          "links": [
+            278
+          ],
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TrainDatasetGeneralConfig"
+      },
+      "widgets_values": [
+        false,
+        false,
+        false,
+        0,
+        false,
+        false,
+        ""
+      ]
+    },
+    {
+      "id": 140,
+      "type": "SDXLModelSelect",
+      "pos": [
+        286.32293701171875,
+        40.688087463378906
+      ],
+      "size": [
+        385.4800109863281,
+        66.09330749511719
+      ],
+      "flags": {},
+      "order": 12,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "lora_path",
+          "type": "STRING",
+          "link": null,
+          "widget": {
+            "name": "lora_path"
+          },
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "sdxl_models",
+          "type": "TRAIN_SDXL_MODELS",
+          "links": [
+            254
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SDXLModelSelect"
+      },
+      "widgets_values": [
+        "SDXL\\AnythingXL_xl.safetensors",
+        ""
+      ]
+    },
+    {
+      "id": 141,
+      "type": "SDXLTrainValidate",
+      "pos": [
+        1590.9019775390625,
+        503.4344482421875
+      ],
+      "size": [
+        468.5999755859375,
+        46
+      ],
+      "flags": {},
+      "order": 30,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 247
+        },
+        {
+          "name": "validation_settings",
+          "type": "VALSETTINGS",
+          "link": 248,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            249
+          ]
+        },
+        {
+          "name": "validation_images",
+          "type": "IMAGE",
+          "links": [
+            250,
+            251
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SDXLTrainValidate"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 145,
+      "type": "SDXLTrainValidate",
+      "pos": [
+        2667.61767578125,
+        509.09039306640625
+      ],
+      "size": [
+        468.5999755859375,
+        46
+      ],
+      "flags": {},
+      "order": 39,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 261
+        },
+        {
+          "name": "validation_settings",
+          "type": "VALSETTINGS",
+          "link": 262,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            263
+          ]
+        },
+        {
+          "name": "validation_images",
+          "type": "IMAGE",
+          "links": [
+            264,
+            265
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SDXLTrainValidate"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 146,
+      "type": "SDXLTrainValidate",
+      "pos": [
+        3727.333251953125,
+        514.4589233398438
+      ],
+      "size": [
+        468.5999755859375,
+        46
+      ],
+      "flags": {},
+      "order": 48,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 266
+        },
+        {
+          "name": "validation_settings",
+          "type": "VALSETTINGS",
+          "link": 267,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            268
+          ]
+        },
+        {
+          "name": "validation_images",
+          "type": "IMAGE",
+          "links": [
+            269,
+            270
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SDXLTrainValidate"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 147,
+      "type": "SDXLTrainValidate",
+      "pos": [
+        4792.4169921875,
+        533.7847900390625
+      ],
+      "size": [
+        468.5999755859375,
+        46
+      ],
+      "flags": {},
+      "order": 55,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 271
+        },
+        {
+          "name": "validation_settings",
+          "type": "VALSETTINGS",
+          "link": 272,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            273,
+            274
+          ]
+        },
+        {
+          "name": "validation_images",
+          "type": "IMAGE",
+          "links": [
+            275,
+            276
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SDXLTrainValidate"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 88,
+      "type": "Display Any (rgthree)",
+      "pos": [
+        1183.877197265625,
+        223.7266082763672
+      ],
+      "size": [
+        210,
+        76
+      ],
+      "flags": {},
+      "order": 24,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "source",
+          "type": "*",
+          "link": 258,
+          "dir": 3
+        }
+      ],
+      "outputs": [],
+      "title": "Number of epochs",
+      "properties": {
+        "Node name for S&R": "Display Any (rgthree)"
+      },
+      "widgets_values": [
+        ""
+      ]
+    },
+    {
+      "id": 38,
+      "type": "SetNode",
+      "pos": [
+        1186.6719970703125,
+        77.76944732666016
+      ],
+      "size": [
+        210,
+        58
+      ],
+      "flags": {
+        "collapsed": true
+      },
+      "order": 20,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "VALSETTINGS",
+          "type": "VALSETTINGS",
+          "link": 253
+        }
+      ],
+      "outputs": [
+        {
+          "name": "*",
+          "type": "*",
+          "links": null
+        }
+      ],
+      "title": "Set_validation_settings",
+      "properties": {
+        "previousName": "validation_settings"
+      },
+      "widgets_values": [
+        "validation_settings"
+      ]
+    },
+    {
+      "id": 112,
+      "type": "TrainDatasetAdd",
+      "pos": [
+        -403.896728515625,
+        208.86936950683594
+      ],
+      "size": [
+        259.5897521972656,
+        338
+      ],
+      "flags": {},
+      "order": 19,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "dataset_config",
+          "type": "JSON",
+          "link": 278
+        },
+        {
+          "name": "regularization",
+          "type": "JSON",
+          "link": null,
+          "shape": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "dataset",
+          "type": "JSON",
+          "links": [
+            255
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "TrainDatasetAdd"
+      },
+      "widgets_values": [
+        1024,
+        1024,
+        1,
+        "../datasets/akihiko_yoshida_no_caps",
+        "akihikoyoshida",
+        true,
+        false,
+        1,
+        256,
+        1024
+      ]
+    },
+    {
+      "id": 9,
+      "type": "PreviewImage",
+      "pos": [
+        1547,
+        596
+      ],
+      "size": [
+        713.1361694335938,
+        476.6578063964844
+      ],
+      "flags": {},
+      "order": 32,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "images",
+          "type": "IMAGE",
+          "link": 250
+        }
+      ],
+      "outputs": [],
+      "properties": {
+        "Node name for S&R": "PreviewImage"
+      },
+      "widgets_values": []
+    },
+    {
+      "id": 143,
+      "type": "SDXLTrainValidationSettings",
+      "pos": [
+        784.0570068359375,
+        48.04124069213867
+      ],
+      "size": [
+        378,
+        202
+      ],
+      "flags": {},
+      "order": 13,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "validation_settings",
+          "type": "VALSETTINGS",
+          "links": [
+            253
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "SDXLTrainValidationSettings"
+      },
+      "widgets_values": [
+        20,
+        1024,
+        1024,
+        7.5,
+        "euler",
+        42,
+        "fixed"
+      ]
+    },
+    {
+      "id": 148,
+      "type": "OptimizerConfigAdafactor",
+      "pos": [
+        459.10980224609375,
+        1368.337890625
+      ],
+      "size": [
+        400,
+        316
+      ],
+      "flags": {},
+      "order": 14,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "optimizer_settings",
+          "type": "ARGS",
+          "links": [],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "OptimizerConfigAdafactor"
+      },
+      "widgets_values": [
+        0,
+        "constant_with_warmup",
+        100,
+        1,
+        1,
+        false,
+        false,
+        false,
+        1,
+        5,
+        ""
+      ]
+    },
+    {
+      "id": 135,
+      "type": "StringConstantMultiline",
+      "pos": [
+        402.94171142578125,
+        1020.843994140625
+      ],
+      "size": [
+        400,
+        200
+      ],
+      "flags": {},
+      "order": 15,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "STRING",
+          "type": "STRING",
+          "links": [
+            260
+          ],
+          "slot_index": 0,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "StringConstantMultiline"
+      },
+      "widgets_values": [
+        "cute anime girl blonde messy long hair blue eyes wearing a maid outfit with a long black dress with a gold leaf pattern and a white apron in an old dark victorian mansion with a bright window and very expensive stuff everywhere akihikoyoshida",
+        true
+      ]
+    },
+    {
+      "id": 144,
+      "type": "InitSDXLLoRATraining",
+      "pos": [
+        835.8189086914062,
+        369.5653381347656
+      ],
+      "size": [
+        430.8000183105469,
+        708
+      ],
+      "flags": {},
+      "order": 22,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "SDXL_models",
+          "type": "TRAIN_SDXL_MODELS",
+          "link": 254
+        },
+        {
+          "name": "dataset",
+          "type": "JSON",
+          "link": 255
+        },
+        {
+          "name": "optimizer_settings",
+          "type": "ARGS",
+          "link": 280
+        },
+        {
+          "name": "resume_args",
+          "type": "ARGS",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "block_args",
+          "type": "ARGS",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "loss_args",
+          "type": "ARGS",
+          "link": null,
+          "shape": 7
+        },
+        {
+          "name": "sample_prompts_pos",
+          "type": "STRING",
+          "link": 260,
+          "widget": {
+            "name": "sample_prompts_pos"
+          }
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            257
+          ]
+        },
+        {
+          "name": "epochs_count",
+          "type": "INT",
+          "links": [
+            258
+          ]
+        },
+        {
+          "name": "args",
+          "type": "KOHYA_ARGS",
+          "links": [
+            259
+          ]
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "InitSDXLLoRATraining"
+      },
+      "widgets_values": [
+        "SDXL_lora",
+        "SDXL_trainer_output",
+        16,
+        16,
+        1,
+        3000,
+        "disk",
+        "disk",
+        false,
+        0,
+        false,
+        "fp32",
+        "fp16",
+        "sdpa",
+        "disabled",
+        0,
+        0,
+        "illustration of a kitten | photograph of a turtle",
+        "bad quality, worst quality",
+        "disabled",
+        ""
+      ]
+    },
+    {
+      "id": 149,
+      "type": "OptimizerConfigProdigyPlusScheduleFree",
+      "pos": [
+        253.94273376464844,
+        268.88946533203125
+      ],
+      "size": [
+        504,
+        388
+      ],
+      "flags": {},
+      "order": 16,
+      "mode": 0,
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "optimizer_settings",
+          "type": "ARGS",
+          "links": [
+            280
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "OptimizerConfigProdigyPlusScheduleFree"
+      },
+      "widgets_values": [
+        2,
+        0,
+        750,
+        0.000001,
+        2,
+        true,
+        true,
+        5,
+        true,
+        true,
+        true,
+        true,
+        true,
+        ""
+      ]
+    },
+    {
+      "id": 4,
+      "type": "FluxTrainLoop",
+      "pos": [
+        1519,
+        256
+      ],
+      "size": [
+        393,
+        78
+      ],
+      "flags": {},
+      "order": 23,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 257
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            162,
+            218
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [
+            220
+          ],
+          "slot_index": 1,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainLoop"
+      },
+      "widgets_values": [
+        750
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 44,
+      "type": "FluxTrainLoop",
+      "pos": [
+        2630,
+        330
+      ],
+      "size": [
+        393,
+        78
+      ],
+      "flags": {},
+      "order": 31,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 249
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            164,
+            222
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [
+            235
+          ],
+          "slot_index": 1,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainLoop"
+      },
+      "widgets_values": [
+        750
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 59,
+      "type": "FluxTrainLoop",
+      "pos": [
+        3700,
+        330
+      ],
+      "size": [
+        393,
+        78
+      ],
+      "flags": {},
+      "order": 40,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 263
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            166,
+            224
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [
+            234
+          ],
+          "slot_index": 1,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainLoop"
+      },
+      "widgets_values": [
+        750
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    },
+    {
+      "id": 64,
+      "type": "FluxTrainLoop",
+      "pos": [
+        4770,
+        330
+      ],
+      "size": [
+        393,
+        78
+      ],
+      "flags": {},
+      "order": 49,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "link": 268
+        }
+      ],
+      "outputs": [
+        {
+          "name": "network_trainer",
+          "type": "NETWORKTRAINER",
+          "links": [
+            232
+          ],
+          "slot_index": 0,
+          "shape": 3
+        },
+        {
+          "name": "steps",
+          "type": "INT",
+          "links": [
+            215
+          ],
+          "slot_index": 1,
+          "shape": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "FluxTrainLoop"
+      },
+      "widgets_values": [
+        750
+      ],
+      "color": "#232",
+      "bgcolor": "#353"
+    }
+  ],
+  "links": [
+    [
+      111,
+      79,
+      0,
+      78,
+      2,
+      "STRING"
+    ],
+    [
+      117,
+      81,
+      0,
+      80,
+      2,
+      "STRING"
+    ],
+    [
+      121,
+      82,
+      0,
+      83,
+      2,
+      "STRING"
+    ],
+    [
+      124,
+      84,
+      0,
+      85,
+      2,
+      "STRING"
+    ],
+    [
+      136,
+      89,
+      1,
+      73,
+      0,
+      "*"
+    ],
+    [
+      138,
+      70,
+      0,
+      90,
+      0,
+      "IMAGE"
+    ],
+    [
+      161,
+      97,
+      0,
+      98,
+      0,
+      "IMAGE"
+    ],
+    [
+      162,
+      4,
+      0,
+      97,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      163,
+      99,
+      0,
+      100,
+      0,
+      "IMAGE"
+    ],
+    [
+      164,
+      44,
+      0,
+      99,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      165,
+      101,
+      0,
+      102,
+      0,
+      "IMAGE"
+    ],
+    [
+      166,
+      59,
+      0,
+      101,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      195,
+      119,
+      0,
+      117,
+      0,
+      "IMAGE"
+    ],
+    [
+      199,
+      120,
+      3,
+      117,
+      1,
+      "INT"
+    ],
+    [
+      200,
+      78,
+      0,
+      121,
+      0,
+      "*"
+    ],
+    [
+      201,
+      80,
+      0,
+      122,
+      0,
+      "*"
+    ],
+    [
+      202,
+      123,
+      0,
+      119,
+      0,
+      "IMAGE"
+    ],
+    [
+      203,
+      124,
+      0,
+      119,
+      1,
+      "IMAGE"
+    ],
+    [
+      204,
+      83,
+      0,
+      125,
+      0,
+      "*"
+    ],
+    [
+      206,
+      126,
+      0,
+      119,
+      2,
+      "IMAGE"
+    ],
+    [
+      207,
+      85,
+      0,
+      127,
+      0,
+      "*"
+    ],
+    [
+      208,
+      128,
+      0,
+      119,
+      3,
+      "IMAGE"
+    ],
+    [
+      209,
+      123,
+      0,
+      120,
+      0,
+      "IMAGE"
+    ],
+    [
+      210,
+      117,
+      0,
+      129,
+      0,
+      "IMAGE"
+    ],
+    [
+      214,
+      129,
+      0,
+      130,
+      0,
+      "IMAGE"
+    ],
+    [
+      215,
+      64,
+      1,
+      84,
+      0,
+      "*"
+    ],
+    [
+      218,
+      4,
+      0,
+      14,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      220,
+      4,
+      1,
+      79,
+      0,
+      "*"
+    ],
+    [
+      222,
+      44,
+      0,
+      47,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      224,
+      59,
+      0,
+      62,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      230,
+      133,
+      2,
+      89,
+      1,
+      "STRING"
+    ],
+    [
+      231,
+      133,
+      0,
+      129,
+      2,
+      "STRING"
+    ],
+    [
+      232,
+      64,
+      0,
+      134,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      234,
+      59,
+      1,
+      82,
+      0,
+      "*"
+    ],
+    [
+      235,
+      44,
+      1,
+      81,
+      0,
+      "*"
+    ],
+    [
+      236,
+      133,
+      2,
+      74,
+      0,
+      "*"
+    ],
+    [
+      247,
+      14,
+      0,
+      141,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      248,
+      40,
+      0,
+      141,
+      1,
+      "VALSETTINGS"
+    ],
+    [
+      249,
+      141,
+      0,
+      44,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      250,
+      141,
+      1,
+      9,
+      0,
+      "IMAGE"
+    ],
+    [
+      251,
+      141,
+      1,
+      78,
+      0,
+      "IMAGE"
+    ],
+    [
+      253,
+      143,
+      0,
+      38,
+      0,
+      "VALSETTINGS"
+    ],
+    [
+      254,
+      140,
+      0,
+      144,
+      0,
+      "TRAIN_SDXL_MODELS"
+    ],
+    [
+      255,
+      112,
+      0,
+      144,
+      1,
+      "JSON"
+    ],
+    [
+      257,
+      144,
+      0,
+      4,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      258,
+      144,
+      1,
+      88,
+      0,
+      "*"
+    ],
+    [
+      259,
+      144,
+      2,
+      105,
+      0,
+      "*"
+    ],
+    [
+      260,
+      135,
+      0,
+      144,
+      6,
+      "STRING"
+    ],
+    [
+      261,
+      47,
+      0,
+      145,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      262,
+      48,
+      0,
+      145,
+      1,
+      "VALSETTINGS"
+    ],
+    [
+      263,
+      145,
+      0,
+      59,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      264,
+      145,
+      1,
+      46,
+      0,
+      "IMAGE"
+    ],
+    [
+      265,
+      145,
+      1,
+      80,
+      0,
+      "IMAGE"
+    ],
+    [
+      266,
+      62,
+      0,
+      146,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      267,
+      63,
+      0,
+      146,
+      1,
+      "VALSETTINGS"
+    ],
+    [
+      268,
+      146,
+      0,
+      64,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      269,
+      146,
+      1,
+      61,
+      0,
+      "IMAGE"
+    ],
+    [
+      270,
+      146,
+      1,
+      83,
+      0,
+      "IMAGE"
+    ],
+    [
+      271,
+      134,
+      0,
+      147,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      272,
+      68,
+      0,
+      147,
+      1,
+      "VALSETTINGS"
+    ],
+    [
+      273,
+      147,
+      0,
+      70,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      274,
+      147,
+      0,
+      133,
+      0,
+      "NETWORKTRAINER"
+    ],
+    [
+      275,
+      147,
+      1,
+      66,
+      0,
+      "IMAGE"
+    ],
+    [
+      276,
+      147,
+      1,
+      85,
+      0,
+      "IMAGE"
+    ],
+    [
+      278,
+      137,
+      0,
+      112,
+      0,
+      "JSON"
+    ],
+    [
+      280,
+      149,
+      0,
+      144,
+      2,
+      "ARGS"
+    ]
+  ],
+  "groups": [
+    {
+      "id": 1,
+      "title": "Dataset",
+      "bounding": [
+        -1190,
+        -151,
+        1362,
+        851
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 2,
+      "title": "Train_04",
+      "bounding": [
+        4753,
+        127,
+        996,
+        989
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 3,
+      "title": "Train_03",
+      "bounding": [
+        3681,
+        128,
+        1047,
+        986
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 4,
+      "title": "Train_02",
+      "bounding": [
+        2602,
+        124,
+        1046,
+        975
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 5,
+      "title": "Settings and init",
+      "bounding": [
+        195,
+        -187,
+        1223,
+        1511
+      ],
+      "color": "#b06634",
+      "font_size": 24,
+      "flags": {}
+    },
+    {
+      "id": 6,
+      "title": "Train_01",
+      "bounding": [
+        1439,
+        120,
+        1107,
+        975
+      ],
+      "color": "#3f789e",
+      "font_size": 24,
+      "flags": {}
+    }
+  ],
+  "config": {},
+  "extra": {
+    "ds": {
+      "scale": 0.7513148009015779,
+      "offset": [
+        714.3560075357955,
+        116.92743072096404
+      ]
+    },
+    "VHS_latentpreview": true,
+    "VHS_latentpreviewrate": 0
+  },
+  "version": 0.4
+}
