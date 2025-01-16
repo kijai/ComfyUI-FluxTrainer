@@ -339,6 +339,50 @@ class OptimizerConfigProdigy:
         kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
         
         return (kwargs,)
+
+class TrainNetworkConfig:
+    @classmethod
+    def INPUT_TYPES(s):
+        return {"required": {
+            "network_type": (["lora", "LyCORIS/LoKr", "LyCORIS/Locon", "LyCORIS/LoHa"], {"default": "lora", "tooltip": "network type"}),
+            "lycoris_preset": (["full", "full-lin", "attn-mlp", "attn-only"], {"default": "attn-mlp"}),
+            "factor": ("INT",{"default": -1, "min": -1, "max": 16, "step": 1, "tooltip": "LoKr factor"}),
+            "extra_network_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional network args"}),
+           },
+        }
+
+    RETURN_TYPES = ("NETWORK_CONFIG",)
+    RETURN_NAMES = ("network_config",)
+    FUNCTION = "create_config"
+    CATEGORY = "FluxTrainer"
+
+    def create_config(self, network_type, extra_network_args, lycoris_preset, factor):
+  
+        extra_args = [arg.strip() for arg in extra_network_args.strip().split('|') if arg.strip()]
+
+        if network_type == "lora":
+            network_module = ".networks.lora"
+        elif network_type == "LyCORIS/LoKr":
+            network_module = ".lycoris.kohya"
+            algo = "lokr"
+        elif network_type == "LyCORIS/Locon":
+            network_module = ".lycoris.kohya"
+            algo = "locon"
+        elif network_type == "LyCORIS/LoHa":
+            network_module = ".lycoris.kohya"
+            algo = "loha"
+
+        network_args = [
+                f"algo={algo}",
+                f"factor={factor}",
+                f"preset={lycoris_preset}"
+            ]
+        network_config = {
+            "network_module": network_module,
+            "network_args": network_args + extra_args
+        }
+        
+        return (network_config,)
     
 class OptimizerConfigProdigyPlusScheduleFree:
     @classmethod
@@ -390,7 +434,7 @@ class InitFluxLoRATraining:
             "optimizer_settings": ("ARGS",),
             "output_name": ("STRING", {"default": "flux_lora", "multiline": False}),
             "output_dir": ("STRING", {"default": "flux_trainer_output", "multiline": False, "tooltip": "path to dataset, root is the 'ComfyUI' folder, with windows portable 'ComfyUI_windows_portable'"}),
-            "network_dim": ("INT", {"default": 4, "min": 1, "max": 2048, "step": 1, "tooltip": "network dim"}),
+            "network_dim": ("INT", {"default": 4, "min": 1, "max": 100000, "step": 1, "tooltip": "network dim"}),
             "network_alpha": ("FLOAT", {"default": 1.0, "min": 0.0, "max": 2048.0, "step": 0.01, "tooltip": "network alpha"}),
             "learning_rate": ("FLOAT", {"default": 4e-4, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "learning rate"}),
             "max_train_steps": ("INT", {"default": 1500, "min": 1, "max": 100000, "step": 1, "tooltip": "max number of training steps"}),
@@ -423,6 +467,7 @@ class InitFluxLoRATraining:
                 "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
                 "gradient_checkpointing": (["enabled", "enabled_with_cpu_offloading", "disabled"], {"default": "enabled", "tooltip": "use gradient checkpointing"}),
                 "loss_args": ("ARGS", {"default": "", "tooltip": "loss args"}),
+                "network_config": ("NETWORK_CONFIG", {"tooltip": "additional network config"}),
             },
             "hidden": {
                 "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"
@@ -436,7 +481,7 @@ class InitFluxLoRATraining:
 
     def init_training(self, flux_models, dataset, optimizer_settings, sample_prompts, output_name, attention_mode, 
                       gradient_dtype, save_dtype, additional_args=None, resume_args=None, train_text_encoder='disabled', 
-                      block_args=None, gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, T5_lr=0, loss_args=None, **kwargs):
+                      block_args=None, gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, T5_lr=0, loss_args=None, network_config=None, **kwargs):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -500,7 +545,7 @@ class InitFluxLoRATraining:
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
-            "network_module": ".networks.lora_flux",
+            "network_module": ".networks.lora_flux" if network_config is None else network_config["network_module"],
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
@@ -509,6 +554,7 @@ class InitFluxLoRATraining:
             "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
             "fp8_base_unet": True if "fp8" in train_text_encoder else False,
             "disable_mmap_load_safetensors": False,
+            "network_args": None if network_config is None else network_config["network_args"],
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
@@ -1722,6 +1768,7 @@ NODE_CLASS_MAPPINGS = {
     "FluxTrainAndValidateLoop": FluxTrainAndValidateLoop,
     "OptimizerConfigProdigyPlusScheduleFree": OptimizerConfigProdigyPlusScheduleFree,
     "FluxTrainerLossConfig": FluxTrainerLossConfig,
+    "TrainNetworkConfig": TrainNetworkConfig,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
     "InitFluxLoRATraining": "Init Flux LoRA Training",
@@ -1748,4 +1795,5 @@ NODE_DISPLAY_NAME_MAPPINGS = {
     "FluxTrainAndValidateLoop": "Flux Train And Validate Loop",
     "OptimizerConfigProdigyPlusScheduleFree": "Optimizer Config ProdigyPlusScheduleFree",
     "FluxTrainerLossConfig": "Flux Trainer Loss Config",
+    "TrainNetworkConfig": "Train Network Config",
 }

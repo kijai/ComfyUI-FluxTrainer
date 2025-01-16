@@ -60,7 +60,7 @@ class InitSDXLLoRATraining:
             "optimizer_settings": ("ARGS",),
             "output_name": ("STRING", {"default": "SDXL_lora", "multiline": False}),
             "output_dir": ("STRING", {"default": "SDXL_trainer_output", "multiline": False, "tooltip": "path to dataset, root is the 'ComfyUI' folder, with windows portable 'ComfyUI_windows_portable'"}),
-            "network_dim": ("INT", {"default": 16, "min": 1, "max": 2048, "step": 1, "tooltip": "network dim"}),
+            "network_dim": ("INT", {"default": 16, "min": 1, "max": 100000, "step": 1, "tooltip": "network dim"}),
             "network_alpha": ("FLOAT", {"default": 16, "min": 0.0, "max": 2048.0, "step": 0.01, "tooltip": "network alpha"}),
             "learning_rate": ("FLOAT", {"default": 1e-6, "min": 0.0, "max": 10.0, "step": 0.0000001, "tooltip": "learning rate"}),
             "max_train_steps": ("INT", {"default": 1500, "min": 1, "max": 100000, "step": 1, "tooltip": "max number of training steps"}),
@@ -70,7 +70,7 @@ class InitSDXLLoRATraining:
             "blocks_to_swap": ("INT", {"default": 0, "min": 0, "max": 100, "step": 1, "tooltip": "option for memory use reduction. The maximum number of blocks that can be swapped is 36 for SDXL.5L and 22 for SDXL.5M"}),
             "fp8_base": ("BOOLEAN", {"default": False, "tooltip": "use fp8 for base model"}),
             "gradient_dtype": (["fp32", "fp16", "bf16"], {"default": "fp32", "tooltip": "the actual dtype training uses"}),
-            "save_dtype": (["fp32", "fp16", "bf16", "fp8_e4m3fn", "fp8_e5m2"], {"default": "bf16", "tooltip": "the dtype to save checkpoints as"}),
+            "save_dtype": (["fp32", "fp16", "bf16", "fp8_e4m3fn", "fp8_e5m2"], {"default": "fp16", "tooltip": "the dtype to save checkpoints as"}),
             "attention_mode": (["sdpa", "xformers", "disabled"], {"default": "sdpa", "tooltip": "memory efficient attention mode"}),
             "train_text_encoder": (['disabled', 'clip_l',], {"default": 'disabled', "tooltip": "also train the selected text encoders using specified dtype, T5 can not be trained without clip_l"}),
             "clip_l_lr": ("FLOAT", {"default": 0, "min": 0.0, "max": 10.0, "step": 0.000001, "tooltip": "text encoder learning rate"}),
@@ -84,6 +84,7 @@ class InitSDXLLoRATraining:
                 "resume_args": ("ARGS", {"default": "", "tooltip": "resume args to pass to the training command"}),
                 "block_args": ("ARGS", {"default": "", "tooltip": "limit the blocks used in the LoRA"}),
                 "loss_args": ("ARGS", {"default": "", "tooltip": "loss args"}),
+                "network_config": ("NETWORK_CONFIG", {"tooltip": "additional network config"}),
             },
             "hidden": {
                 "prompt": "PROMPT", "extra_pnginfo": "EXTRA_PNGINFO"
@@ -97,7 +98,7 @@ class InitSDXLLoRATraining:
 
     def init_training(self, SDXL_models, dataset, optimizer_settings, sample_prompts_pos, sample_prompts_neg, output_name, attention_mode, 
                       gradient_dtype, save_dtype, additional_args=None, resume_args=None, train_text_encoder='disabled', 
-                      gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, clip_g_lr=0, loss_args=None, **kwargs):
+                      gradient_checkpointing="enabled", prompt=None, extra_pnginfo=None, clip_l_lr=0, clip_g_lr=0, loss_args=None, network_config=None, **kwargs):
         mm.soft_empty_cache()
         
         output_dir = os.path.abspath(kwargs.get("output_dir"))
@@ -158,20 +159,21 @@ class InitSDXLLoRATraining:
             "sample_prompts": positive_prompts,
             "negative_prompts": negative_prompts,
             "save_precision": save_dtype,
-            "mixed_precision": "fp16",
+            "mixed_precision": "bf16",
             "num_cpu_threads_per_process": 1,
             "pretrained_model_name_or_path": SDXL_models["checkpoint"],
             "save_model_as": "safetensors",
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
             "seed": 42,
-            "network_module": ".networks.lora",
+            "network_module": ".networks.lora" if network_config is None else network_config["network_module"],
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
             "loss_type": "l2",
             "alpha_mask": dataset["alpha_mask"],
             "network_train_unet_only": True if train_text_encoder == 'disabled' else False,
             "disable_mmap_load_safetensors": False,
+            "network_args": None if network_config is None else network_config["network_args"],
         }
         attention_settings = {
             "sdpa": {"mem_eff_attn": True, "xformers": False, "spda": True},
