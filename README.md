@@ -1,5 +1,9 @@
 # ComfyUI Flux Trainer
 
+Wrapper for slightly modified kohya's training scripts: https://github.com/kohya-ss/sd-scripts
+
+Including code from: https://github.com/KohakuBlueleaf/Lycoris
+
 ## DISCLAIMER:
 I have **very** little previous experience in training anything, Flux is basically first model I've been inspired to learn. Previously I've only trained AnimateDiff Motion Loras, and built similar training nodes for it.
 
@@ -41,6 +45,8 @@ For full model training the fp16 version of the main model needs to be used.
 - You can build workflows to compare settings etc.
 
 Currently supports LoRA training, and untested full finetune with code from kohya's scripts: https://github.com/kohya-ss/sd-scripts
+
+Experimental support for LyCORIS training has been added as well, using code from: https://github.com/KohakuBlueleaf/Lycoris
 
 ![Screenshot 2024-08-21 020207](https://github.com/user-attachments/assets/1686b180-90c8-41d0-8c96-63e76ebc2475)
 
