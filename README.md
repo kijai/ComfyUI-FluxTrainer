@@ -4,6 +4,8 @@ Wrapper for slightly modified kohya's training scripts: https://github.com/kohya
 
 Including code from: https://github.com/KohakuBlueleaf/Lycoris
 
+And https://github.com/LoganBooker/prodigy-plus-schedule-free
+
 ## DISCLAIMER:
 I have **very** little previous experience in training anything, Flux is basically first model I've been inspired to learn. Previously I've only trained AnimateDiff Motion Loras, and built similar training nodes for it.
 
