@@ -356,6 +356,9 @@ class FluxNetworkTrainer(NetworkTrainer):
             """
 
             return model_pred
+        
+        if args.bypass_flux_guidance:
+            flux_utils.bypass_flux_guidance(unet)
 
         model_pred = call_dit(
             img=packed_noisy_model_input,
@@ -370,6 +373,9 @@ class FluxNetworkTrainer(NetworkTrainer):
 
         # unpack latents
         model_pred = flux_utils.unpack_latents(model_pred, packed_latent_height, packed_latent_width)
+
+        if args.bypass_flux_guidance: #for flex
+            flux_utils.restore_flux_guidance(unet)
 
         # apply model prediction type
         model_pred, weighting = flux_train_utils.apply_model_prediction_type(args, model_pred, noisy_model_input, sigmas)

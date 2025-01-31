@@ -62,7 +62,11 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
             If False, weight_decay will have a much stronger effect.
             (default: True).
         use_bias_correction (boolean):
-            Turn on Adafactor-style bias correction, which scales beta2 directly. (default: False).
+            Use the RAdam variant of schedule-free (https://github.com/facebookresearch/schedule_free/blob/main/schedulefree/radam_schedulefree.py).
+            This combines bias correction with automatic warmup. Please note this will significantly dampen Prodigy's adaptive stepsize
+            calculations -- it can take up to 10 times longer to start adjusting the learning rate. This can be mitigated somewhat by enabling
+            SPEED (use_speed=True).
+            (default: False).
         d0 (float):
             Initial estimate for Prodigy. Also serves as the minimum learning rate.
             (default: 1e-6).
@@ -74,6 +78,11 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
             Freeze Prodigy stepsize adjustments after a certain optimiser step and releases all state memory required
             by Prodigy.
             (default: 0)
+        use_speed (boolean):
+            Highly experimental. Signed Prodigy with ExponEntial D. This decouples the adaptive stepsize calculations from 
+            the magnitude of the weights and gradient. This can provide faster, more accurate LRs in some scenarios, 
+            but may fail in situations where the optimal LR is very close to (or less than) d0.
+            (default: False):
         split_groups (boolean):
             Track individual adaptation values for each parameter group. For example, if training
             a text encoder beside a Unet. Note this can have a significant impact on training dynamics.
@@ -87,6 +96,12 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
         factored (boolean):
             Use factored approximation of the second moment, similar to Adafactor. Reduces memory usage. Disable
             if training results in NaNs or the learning rate fails to grow.
+            (default: True)
+        factored_fp32 (boolean):
+            Force the use of float32 for the factored second moment. Because the factorisation is an approximation, it can
+            be beneficial to use high precision to avoid stability issues. However, if you're training in lower precision 
+            for short durations, setting this to False will slightly reduce memory usage. 
+            Ignored if factored is False.
             (default: True)
         fused_back_pass (boolean):
             Stops the optimiser from running the normal step method. Set to True if using fused backward pass. Really only
@@ -118,6 +133,16 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
             so as not to include the current gradient in the denominator. This is a partial implementation of ADOPT 
             (https://arxiv.org/abs/2411.02853), as we don't have a first moment to use for the update.
             (default: False)
+        use_orthograd (boolean):
+            Experimental. Updates weights using the component of the gradient that is orthogonal to the current 
+            weight direction, as described in "Grokking at the Edge of Numerical Stability" (https://arxiv.org/pdf/2501.04697).
+            Can help prevent overfitting and improve generalisation.
+            (default: False)
+        use_focus (boolean):
+            Experimental. Modifies the update step to better handle noise at large step sizes. From 
+            "FOCUS: First-Order Concentrated Update Scheme" (https://arxiv.org/abs/2501.12243). This method is
+            incompatible with factorisation, Muon and Adam-atan2.
+            (default: False)
         stochastic_rounding (boolean):
             Use stochastic rounding for bfloat16 weights (https://github.com/pytorch/pytorch/issues/120376). Brings
             bfloat16 training performance close to that of float32.
@@ -130,27 +155,32 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
                  use_bias_correction=False,
                  d0=1e-6, d_coef=1.0,
                  prodigy_steps=0,
+                 use_speed=False,
                  eps=1e-8,
                  split_groups=True,
                  split_groups_mean=True,
                  factored=True,
+                 factored_fp32=True,
                  fused_back_pass=False,
                  use_stableadamw=True,
                  use_muon_pp=False,
                  use_cautious=False,
                  use_grams=False,
                  use_adopt=False,
+                 use_orthograd=False,
+                 use_focus=False,
                  stochastic_rounding=True):
 
         super().__init__(params=params, lr=lr, betas=betas, beta3=beta3,
                          weight_decay=weight_decay, weight_decay_by_lr=weight_decay_by_lr,
                          use_bias_correction=use_bias_correction,
-                         d0=d0, d_coef=d_coef, prodigy_steps=prodigy_steps,
+                         d0=d0, d_coef=d_coef, prodigy_steps=prodigy_steps, use_speed=use_speed,
                          eps=eps, split_groups=split_groups,
-                         split_groups_mean=split_groups_mean, factored=factored,
+                         split_groups_mean=split_groups_mean, factored=factored, factored_fp32=factored_fp32,
                          fused_back_pass=fused_back_pass, use_stableadamw=use_stableadamw,
                          use_muon_pp=use_muon_pp, use_cautious=use_cautious, use_grams=use_grams, 
-                         use_adopt=use_adopt, stochastic_rounding=stochastic_rounding)
+                         use_adopt=use_adopt, use_orthograd=use_orthograd, use_focus=use_focus, 
+                         stochastic_rounding=stochastic_rounding)
 
     @torch.no_grad()
     def eval(self):
@@ -188,9 +218,7 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
         return state
 
     @torch.no_grad()
-    def update_params(self, y, z, update, group):
-        dlr = self.get_dlr(group)
-        
+    def update_params(self, y, z, update, group, dlr):
         beta1, _ = group['betas']
         decay = group['weight_decay']
 
@@ -208,21 +236,23 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
             y.sub_(y, alpha=decay * xy_step)
             z.sub_(y, alpha=decay)
 
-        if group['use_cautious']:
-            # "Cautious Optimizer (C-Optim): Improving Training with One Line of Code": https://github.com/kyleliang919/c-optim
-            # ScheduleFree implementation by nhamanasu: https://github.com/facebookresearch/schedule_free/pull/54
+        cautious, grams = group['use_cautious'], group['use_grams']
+
+        if cautious or grams:
             u = (y - z).mul_(ckp1).add_(update, alpha=dlr * xy_step)
             z.sub_(update, alpha=dlr)
-            mask = (u * update > 0).to(update.dtype)
-            mask.mul_(mask.numel() / (mask.sum() + 1))
-            u.mul_(mask)
+
+            if cautious:
+                # "Cautious Optimizer (C-Optim): Improving Training with One Line of Code": https://github.com/kyleliang919/c-optim
+                # ScheduleFree implementation by nhamanasu: https://github.com/facebookresearch/schedule_free/pull/54
+                mask = update.mul_(u).sign_().clamp_min_(0)
+                mask.mul_(mask.numel() / mask.sum().add(1))
+                u.mul_(mask)
+            elif grams:
+                # "Grams: Gradient Descent with Adaptive Momentum Scaling": https://arxiv.org/abs/2412.17107
+                u.abs_().mul_(update.sign_())
+
             y.sub_(u)
-            del mask, u
-        elif group['use_grams']:
-            # "Grams: Gradient Descent with Adaptive Momentum Scaling": https://arxiv.org/abs/2412.17107
-            u = (y - z).mul_(ckp1).add_(update, alpha=dlr * xy_step)
-            z.sub_(update, alpha=dlr) # Update z now so we can do sign in-place.
-            y.sub_(u.abs_().mul_(update.sign_()))
             del u
         else:
             y.lerp_(end=z, weight=ckp1)
@@ -233,7 +263,7 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
 
     @torch.no_grad()
     def step_param(self, p, group):
-        self.on_start_step()
+        self.on_start_step(p, group)
 
         if not group['train_mode']:
             raise Exception("Not in train mode!")
@@ -241,49 +271,68 @@ class ProdigyPlusScheduleFree(CoreOptimiser):
         weight_sum = group['weight_sum']
 
         if p.grad is not None:
-            grad = p.grad.to(dtype=torch.float32, copy=True)
-
-            use_adopt = group['use_adopt']  
+            use_adopt = group['use_adopt']
             stochastic = group['stochastic_rounding']
             _, beta2 = group['betas']
             k = group['k']
 
             state = self.initialise_state(p, group)
 
+            z_state = state['z']
+            y, z = (p.float(), z_state.float()) if stochastic else (p, z_state)
+
+            grad = self.orthograd(z_state, p.grad) if group['use_orthograd'] else p.grad.to(dtype=torch.float32, copy=True)
+            dlr = self.get_dlr(group)
+
+            if group['use_bias_correction']:
+                beta2_t = beta2 ** k
+                bias_correction2 = 1 - beta2_t
+
+                # maximum length of the approximated SMA
+                rho_inf = 2 / (1 - beta2) - 1
+                # compute the length of the approximated SMA
+                rho_t = rho_inf - 2 * k * beta2_t / bias_correction2
+                rect = (
+                    ((rho_t - 4) * (rho_t - 2) * rho_inf / ((rho_inf - 4) * (rho_inf - 2) * rho_t)) ** 0.5
+                    if rho_t > 4.0
+                    else 0.0
+                )
+                dlr *= rect
+                beta2 = 1 - (1 - beta2) / (1 - beta2_t)
+
             update = None
 
             if state['muon']:
                 grad = self.newton_schulz_(grad)
-                grad_rms = self.get_rms(grad).item() ** 2
-
-                rms_sq = (state["rms_sq"] * beta2) + (grad_rms * (1 - beta2))
-                state["rms_sq"] = rms_sq
-
-                update = grad.mul_(1.0 / ((rms_sq ** 0.5) + 1e-12))
-            else:
-                if group['use_bias_correction']:
-                    # Adafactor / PaLM beta2 decay. Clip beta2 as per Scaling ViT paper.
-                    beta2 = min(beta2, 1 - k ** -0.8)
-                    beta2 = (1 - beta2) / (1 - beta2 ** k)
-
-                if use_adopt and group['k'] == 1:
-                    self.update_second_moment(state, group, grad, 0, return_denom=False)
+                if group['use_speed']:
+                    grad_rms = state['rms_sq']
+                    if grad_rms is None:
+                        grad_rms = state['rms_sq'] = 1 / self.get_rms(grad)
+                    update = grad.mul_(grad_rms)
                 else:
-                    denom = self.update_second_moment(state, group, grad, beta2, denom_before_update=use_adopt)
-                    update, num_scale = self.update_(grad, denom, group)
+                    d_k = group['d_prev'] / group['d']
+                    rms_sq = state["rms_sq"].mul_(beta2 * d_k * d_k).add_(self.get_rms(grad).square(), alpha=1 - beta2)
+                    update = grad.mul_(1 / rms_sq.sqrt().add(1e-8))
+            else:
+                if use_adopt and group['k'] == 1:
+                    self.update_second_moment(state, group, grad, 0, y, return_denom=False)
+                else:
+                    denom = self.update_second_moment(state, group, grad, beta2, y, denom_before_update=use_adopt)
+                    if group['use_bias_correction'] and rho_t <= 4.0:
+                        update = grad
+                    else:
+                        update = self.update_(grad, denom, group, y)
                     del denom
 
             if update is not None:
                 if group['use_stableadamw']:
                     clip_threshold = self.get_clip_threshold(group)
-                    num_scale = max(1, self.get_rms(update, 1.0).item() / clip_threshold)
-                    update.mul_(1 / num_scale)
+                    rms = self.get_rms(update, 1).div(clip_threshold).clamp_min(1)
+                    update.mul_(1 / rms)
 
-                z_state = state['z']
-                self.update_prodigy(state, group, p.grad, z_state, 1.0)
+                self.update_prodigy(state, group, p.grad, p)
 
-                y, z = (p.float(), z_state.float()) if stochastic else (p, z_state)
-                weight_sum = self.update_params(y, z, update, group)
+                weight_sum = self.update_params(y, z, update, group, dlr)
 
                 self.smart_copy(p, y, stochastic, True)
                 self.smart_copy(z_state, z, stochastic, True)
