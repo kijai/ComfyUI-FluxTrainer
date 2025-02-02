@@ -504,6 +504,9 @@ class LoRANetwork(torch.nn.Module):
             logger.info(f"train T5XXL as well")
 
         #self.only_if_contains = ["lora_unet_single_blocks_20_linear2"]
+        print(self.only_if_contains)
+        print(self.only_if_contains)
+        print(self.only_if_contains)
 
         # create module instances
         def create_modules(
