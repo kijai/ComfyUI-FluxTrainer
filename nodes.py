@@ -1272,7 +1272,7 @@ class VisualizeLoss:
     def INPUT_TYPES(s):
         return {"required": {
             "network_trainer": ("NETWORKTRAINER",),
-            "plot_style": (plt.style.available,{"default": 'default', "tooltip": "matplotlib plot style"}),
+            "plot_style": (plt.style.available,{"default": 'classic', "tooltip": "matplotlib plot style"}),
             "window_size": ("INT", {"default": 100, "min": 0, "max": 10000, "step": 1, "tooltip": "the window size of the moving average"}),
             "normalize_y": ("BOOLEAN", {"default": True, "tooltip": "normalize the y-axis to 0"}),
             "width": ("INT", {"default": 768, "min": 256, "max": 4096, "step": 2, "tooltip": "width of the plot in pixels"}),
