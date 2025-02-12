@@ -609,11 +609,6 @@ class InitFluxLoRATraining:
         if block_args:
             additional_network_args.append(block_args["include"])
         
-        # Handle network_args in args Namespace
-        if hasattr(args, 'network_args') and isinstance(args.network_args, list):
-            args.network_args.extend(additional_network_args)
-        else:
-            setattr(args, 'network_args', additional_network_args)
         
         saved_args_file_path = os.path.join(output_dir, f"{output_name}_args.json")
         with open(saved_args_file_path, 'w') as f:
@@ -627,6 +622,12 @@ class InitFluxLoRATraining:
         saved_workflow_file_path = os.path.join(output_dir, f"{output_name}_workflow.json")
         with open(saved_workflow_file_path, 'w') as f:
             json.dump(metadata, f, indent=4)
+
+        # Handle network_args in args Namespace
+        if hasattr(args, 'network_args') and isinstance(args.network_args, list):
+            args.network_args.extend(additional_network_args)
+        else:
+            setattr(args, 'network_args', additional_network_args)
 
         #pass args to kohya and initialize trainer
         with torch.inference_mode(False):
