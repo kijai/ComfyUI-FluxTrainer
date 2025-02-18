@@ -1281,8 +1281,8 @@ class VisualizeLoss:
              },
         }
 
-    RETURN_TYPES = ("IMAGE", "FLOAT",)
-    RETURN_NAMES = ("plot", "loss_list",)
+    RETURN_TYPES = ("NETWORKTRAINER", "IMAGE", "FLOAT",)
+    RETURN_NAMES = ("network_trainer", "plot", "loss_list",)
     FUNCTION = "draw"
     CATEGORY = "FluxTrainer"
 
@@ -1290,11 +1290,16 @@ class VisualizeLoss:
         import numpy as np
         loss_values = network_trainer["network_trainer"].loss_recorder.global_loss_list
 
+        training_loop = network_trainer["training_loop"]
+        network_trainer = network_trainer["network_trainer"]
+
         # Apply moving average
         def moving_average(values, window_size):
             return np.convolve(values, np.ones(window_size) / window_size, mode='valid')
-        if window_size > 0:
-            loss_values = moving_average(loss_values, window_size)
+        
+        # It will make loss list become a list of all the same constants, I don't know how to modify it, temporarily shut down it.
+        # if window_size > 0:
+        #     loss_values = moving_average(loss_values, window_size)
 
         plt.style.use(plot_style)
 
@@ -1325,8 +1330,12 @@ class VisualizeLoss:
         image_tensor = transforms.ToTensor()(image)
         image_tensor = image_tensor.unsqueeze(0).permute(0, 2, 3, 1).cpu().float()
 
-        return image_tensor, loss_values,
+        trainer = {
+            "network_trainer": network_trainer,
+            "training_loop": training_loop,
+        }
 
+        return (trainer, image_tensor, loss_values,)
 class FluxKohyaInferenceSampler:
     @classmethod
     def INPUT_TYPES(s):
