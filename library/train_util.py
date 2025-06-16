@@ -70,7 +70,9 @@ from . import custom_train_functions, sd3_utils
 from .original_unet import UNet2DConditionModel
 from huggingface_hub import hf_hub_download
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageOps
+import pillow_avif
+import imageio.v3 as iio
 import imagesize
 import cv2
 import safetensors.torch
@@ -1384,8 +1386,16 @@ class BaseDataset(torch.utils.data.Dataset):
         if image_size[0] <= 0:
             # imagesize doesn't work for some images, so use PIL as a fallback
             try:
-                with Image.open(image_path) as img:
-                    image_size = img.size
+                img_array = iio.imread(image_path)
+                if img_array.ndim == 2:
+                    height, width = img_array.shape
+                elif img_array.ndim == 3:
+                    height, width, channels = img_array.shape
+                elif img_array.ndim == 4:
+                    frame, height, width, channels = img_array.shape
+                else:
+                    raise ValueError(f"Unsupported image shape: {img_array.shape}")
+                image_size = (height, width)
             except Exception as e:
                 logger.warning(f"failed to get image size: {image_path}, error: {e}")
                 image_size = (0, 0)
@@ -2794,20 +2804,39 @@ def load_arbitrary_dataset(args, tokenizer=None) -> MinimalDataset:
     return train_dataset_group
 
 
-def load_image(image_path, alpha=False):
+def load_image(image_path: str, alpha: bool = False):
+    img_array = iio.imread(image_path)
+    if img_array.ndim == 2:
+        image = Image.fromarray(img_array, mode='L')
+    elif img_array.ndim == 3 or img_array.ndim == 4:
+        if img_array.ndim == 4:
+            # When the image has a frame dimension, only the first frame is taken.
+            img_array = img_array[0]
+        height, width, channels = img_array.shape
+        if channels == 3:  # RGB
+            image = Image.fromarray(img_array, mode='RGB')
+        elif channels == 4:  # RGBA
+            image = Image.fromarray(img_array, mode='RGBA')
+        else:
+            raise ValueError(f"Unsupported number of channels: {channels}")
+    else:
+        raise ValueError(f"Unsupported image shape: {img_array.shape}")
+
+    if alpha:
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+    else:
+        if image.mode != 'RGB':
+            image = image.convert('RGB')
+    
     try:
-        with Image.open(image_path) as image:
-            if alpha:
-                if not image.mode == "RGBA":
-                    image = image.convert("RGBA")
-            else:
-                if not image.mode == "RGB":
-                    image = image.convert("RGB")
-            img = np.array(image, np.uint8)
-            return img
-    except (IOError, OSError) as e:
-        logger.error(f"Error loading file: {image_path}")
-        raise e
+        # transpose with exif data
+        image = ImageOps.exif_transpose(image)
+    except Exception as e:
+        print(f"Error rotating {image_path}: {e}")
+    
+    img = np.array(image, np.uint8)
+    return img
 
 
 # 画像を読み込む。戻り値はnumpy.ndarray,(original width, original height),(crop left, crop top, crop right, crop bottom)
@@ -6160,7 +6189,7 @@ def sample_image_inference(
     pipeline.scheduler = scheduler
 
     if controlnet_image is not None:
-        controlnet_image = Image.open(controlnet_image).convert("RGB")
+        controlnet_image = load_image(controlnet_image)
         controlnet_image = controlnet_image.resize((width, height), Image.LANCZOS)
 
     height = max(64, height - height % 8)  # round to divisible by 8
@@ -6230,7 +6259,7 @@ class ImageLoadingDataset(torch.utils.data.Dataset):
         img_path = self.images[idx]
 
         try:
-            image = Image.open(img_path).convert("RGB")
+            image = load_image(img_path)
             # convert to tensor temporarily so dataloader will accept it
             tensor_pil = transforms.functional.pil_to_tensor(image)
         except Exception as e:

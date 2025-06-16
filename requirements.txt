@@ -23,3 +23,5 @@ sentencepiece>=0.2.0
 protobuf
 schedulefree>=1.2.7
 prodigy-plus-schedule-free>=1.9.0
+imageio[pyav]
+pillow-avif-plugin

@@ -27,7 +27,6 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import io
-from PIL import Image
 
 import logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -703,7 +702,6 @@ class InitFluxTraining:
         dataset_toml = toml.dumps(json.loads(dataset_config))
         
         parser = train_setup_parser()
-        flux_train_utils.add_flux_train_arguments(parser)
         
         if additional_args is not None:
             print(f"additional_args: {additional_args}")
@@ -1320,7 +1318,7 @@ class VisualizeLoss:
         plt.close(fig)
         buf.seek(0)
 
-        image = Image.open(buf).convert('RGB')
+        image = train_util.load_image(buf)
 
         image_tensor = transforms.ToTensor()(image)
         image_tensor = image_tensor.unsqueeze(0).permute(0, 2, 3, 1).cpu().float()
