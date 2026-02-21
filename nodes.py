@@ -85,6 +85,7 @@ class TrainDatasetGeneralConfig:
             "shuffle_caption": ("BOOLEAN",{"default": False, "tooltip": "shuffle caption"}),
             "caption_dropout_rate": ("FLOAT",{"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.01,"tooltip": "tag dropout rate"}),
             "alpha_mask": ("BOOLEAN",{"default": False, "tooltip": "use alpha channel as mask for training"}),
+            "seed": ("INT",{"default": 42, "min": 0, "max": 2**32 - 1, "step": 1, "tooltip": "During learning, there are a number of random processes such as in what order to read the images and how much noise to put on the training images (details omitted）"})
             },
             "optional": {
                 "reset_on_queue": ("BOOLEAN",{"default": False, "tooltip": "Force refresh of everything for cleaner queueing"}),
@@ -97,8 +98,7 @@ class TrainDatasetGeneralConfig:
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, reset_on_queue=False, caption_extension=".txt"):
-        
+    def create_config(self, shuffle_caption, caption_dropout_rate, color_aug, flip_aug, alpha_mask, seed, reset_on_queue=False, caption_extension=".txt"):
         dataset = {
            "general": {
                 "shuffle_caption": shuffle_caption,
@@ -114,7 +114,8 @@ class TrainDatasetGeneralConfig:
         #print(dataset_json)
         dataset_config = {
             "datasets": dataset_json,
-            "alpha_mask": alpha_mask
+            "alpha_mask": alpha_mask,
+            "seed": seed
         }
         return (dataset_config,)
 
@@ -752,7 +753,7 @@ class InitFluxTraining:
             "save_model_as": "safetensors",
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
-            "seed": 42,
+            "seed": dataset["seed"],
             "gradient_checkpointing": True,
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_{save_dtype}",
@@ -851,7 +852,7 @@ class InitFluxTrainingFromPreset:
             "save_model_as": "safetensors",
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
-            "seed": 42,
+            "seed": dataset["seed"],
             "gradient_checkpointing": True,
             "dataset_config": dataset,
             "output_dir": output_dir,

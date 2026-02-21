@@ -165,7 +165,7 @@ class InitSDXLLoRATraining:
             "save_model_as": "safetensors",
             "persistent_data_loader_workers": False,
             "max_data_loader_n_workers": 0,
-            "seed": 42,
+            "seed": dataset["seed"],
             "network_module": ".networks.lora" if network_config is None else network_config["network_module"],
             "dataset_config": dataset_toml,
             "output_name": f"{output_name}_rank{kwargs.get('network_dim')}_{save_dtype}",
