@@ -388,43 +388,92 @@ class OptimizerConfigProdigyPlusScheduleFree:
     @classmethod
     def INPUT_TYPES(s):
         return {"required": {
-            "lr": ("FLOAT",{"default": 1.0, "min": 0.0, "step": 1e-7, "tooltip": "Learning rate adjustment parameter. Increases or decreases the Prodigy learning rate."}),
-            "max_grad_norm": ("FLOAT",{"default": 0.0, "min": 0.0, "tooltip": "gradient clipping"}),
-            "prodigy_steps": ("INT",{"default": 0, "min": 0, "tooltip": "Freeze Prodigy stepsize adjustments after a certain optimiser step."}),
-            "d0": ("FLOAT",{"default": 1e-6, "min": 0.0,"step": 1e-7, "tooltip": "initial learning rate"}),
-            "d_coef": ("FLOAT",{"default": 1.0, "min": 0.0, "step": 1e-7, "tooltip": "Coefficient in the expression for the estimate of d (default 1.0). Values such as 0.5 and 2.0 typically work as well. Changing this parameter is the preferred way to tune the method."}),
-            "split_groups": ("BOOLEAN",{"default": True, "tooltip": "Track individual adaptation values for each parameter group."}),
-            #"beta3": ("FLOAT",{"default": 0.0, "min": 0.0, "max": 1.0, "step": 0.0001, "tooltip": " Coefficient for computing the Prodigy stepsize using running averages. If set to None, uses the value of square root of beta2 (default: None)."}),
-            #"beta4": ("FLOAT",{"default": 0, "min": 0.0, "max": 1.0, "step": 0.0001, "tooltip": "Coefficient for updating the learning rate from Prodigy's adaptive stepsize. Smooths out spikes in learning rate adjustments. If set to None, beta1 is used instead. (default 0, which disables smoothing and uses original Prodigy behaviour)."}),
-            "use_bias_correction": ("BOOLEAN",{"default": False, "tooltip": "Use the RAdam variant of schedule-free"}),
-            "min_snr_gamma": ("FLOAT",{"default": 5.0, "min": 0.0, "step": 0.01, "tooltip": "gamma for reducing the weight of high loss timesteps. Lower numbers have stronger effect. 5 is recommended by the paper"}),
-            "use_stableadamw": ("BOOLEAN",{"default": True, "tooltip": "Scales parameter updates by the root-mean-square of the normalised gradient, in essence identical to Adafactor's gradient scaling. Set to False if the adaptive learning rate never improves."}),
-            "use_cautious" : ("BOOLEAN",{"default": False, "tooltip": "Experimental. Perform 'cautious' updates, as proposed in https://arxiv.org/pdf/2411.16085. Modifies the update to isolate and boost values that align with the current gradient."}),
-            "use_adopt": ("BOOLEAN",{"default": False, "tooltip": "Experimental. Performs a modified step where the second moment is updated after the parameter update, so as not to include the current gradient in the denominator. This is a partial implementation of ADOPT (https://arxiv.org/abs/2411.02853), as we don't have a first moment to use for the update."}),
-            "use_grams": ("BOOLEAN",{"default": False, "tooltip": "Perform 'grams' updates, as proposed in https://arxiv.org/abs/2412.17107. Modifies the update using sign operations that align with the current gradient. Note that we do not have access to a first moment, so this deviates from the paper (we apply the sign directly to the update). May have a limited effect."}),
-            "stochastic_rounding": ("BOOLEAN",{"default": True, "tooltip": "Use stochastic rounding for bfloat16 weights"}),
-            "use_orthograd": ("BOOLEAN",{"default": False, "tooltip": "Experimental. Updates weights using the component of the gradient that is orthogonal to the current weight direction, as described in (https://arxiv.org/pdf/2501.04697). Can help prevent overfitting and improve generalisation."}),
-            "use_focus ": ("BOOLEAN",{"default": False, "tooltip": "Experimental. Modifies the update step to better handle noise at large step sizes. (https://arxiv.org/abs/2501.12243). This method is incompatible with factorisation, Muon and Adam-atan2."}),
-            "extra_optimizer_args": ("STRING",{"multiline": True, "default": "", "tooltip": "additional optimizer args"}),
-           },
-        }
+            "min_snr_gamma": ("FLOAT", {"default": 5.0, "min": 0.0, "step": 0.01,"tooltip": "gamma for reducing the weight of high loss timesteps.\n""Lower numbers have stronger effect.\n""5 is recommended by the paper."}),
+            "lr_scheduler": ([
+                "schedulefree",
+                "cosine (no-schedulefree)",
+                "linear (no-schedulefree)",
+                "polynomial (no-schedulefree)"
+            ], {
+                "default": "schedulefree",
+                "tooltip": "learning rate scheduler.\n""──────────────\n""'schedulefree': Use Schedule‑Free mode (default), built‑in simulated decay, no external scheduler.\n""----------------------\n""'cosine/linear/polynomial (no‑schedulefree)': decay mode without schedule‑free, as like pure Prodigy."
+            }),
+            "lr_scheduler_power": ("FLOAT", {"default": 1.0, "min": 0.1, "max": 2.0,"tooltip": "controls the LR decay curve shape,\n""only applies to polynomial scheduler.\n""──────────────\n""Higher power = sharper initial LR drop, gentler later;\n""----------------------\n""lower power = gentler initial drop, sharper later;\n""----------------------\n""Power=1.0 = linear scheduler."}),
+            "lr_scheduler_num_cycles": ("INT", {"default": 1, "min": 1, "max": 10,"tooltip": "LR restart count,\n""only applies to polynomial scheduler.\n""It is recommended to set Power=1.0 when cycles > 1"}),
+            "prodigy_steps": ("INT", {"default": 0, "min": 0,"tooltip": "Freeze Prodigy stepsize adjustments after a certain optimiser step.\n""In earlier versions of the optimiser,\n""recommended setting prodigy_steps equal to 5-25% of total step count,\n""but this should not be necessary with recent updates."}),
+            "d0": ("FLOAT", {"default": 1e-6, "min": 0.0, "step": 1e-7,"tooltip": "initial learning rate"}),
+            "d_coef": ("FLOAT", {"default": 1.0, "min": 0.0, "step": 1e-7,"tooltip": "Coefficient in the expression for the estimate of d (default 1.0).\n""Values such as 0.5 and 2.0 typically work as well."}),
+            "split_groups": ("BOOLEAN", {"default": False,"tooltip": "Track individual adaptation values for each parameter group.\n""As of v2.0.0, split_groups_mean is False by default,\n""so full, per-group training is always active.\n""Set split_groups_mean=True to replicate the behaviour of older versions."}),
+            "use_bias_correction": ("BOOLEAN", {"default": False,"tooltip": "Use the RAdam variant of schedule‑free.\n""it can take up to 10 times longer to start adjusting the learning rate.\n""This can be mitigated somewhat by enabling SPEED (use_speed=True)"}),
+            "use_stableadamw": ("BOOLEAN", {"default": True,"tooltip": "Scales parameter updates by the root‑mean‑square (RMS) of the normalised gradient,\n""in essence identical to Adafactor's gradient scaling.\n""Set to False if the adaptive learning rate never improves."}),
+            # "use_cautious": ("BOOLEAN", {"default": False,"tooltip": "For diffusion models, using "cautious" causes frequent loss/gradient explosions. The model breaks down extremely fast, so using cautious with diffusion models while using schedulefree is not really a good idea."}),
+            "stochastic_rounding": ("BOOLEAN", {"default": True,"tooltip": "Use stochastic rounding for bfloat16 weights.\n""(https://github.com/pytorch/pytorch/issues/120376).\n""Brings bfloat16 training performance closer to that of float32."}),
+            "use_grams": ("BOOLEAN", {"default": False,"tooltip": "Experimental.\n""Performs 'grams' updates (see https://arxiv.org/abs/2412.17107).\n""Uses sign-aligned updates without first-moment estimates.\n""May have limited effect."}),
+            "use_adopt": ("BOOLEAN", {"default": False,"tooltip": "Experimental.\n""Applies a modified update where the second moment is updated after the parameter step.\n""Partially implements ADOPT (https://arxiv.org/abs/2411.02853) without first-moment terms."}),
+            "use_orthograd": ("BOOLEAN", {"default": True,"tooltip": "Experimental.\n""Uses orthogonal gradients to update weights,\n""which can help prevent overfitting and improve generalization,\n""as described in (https://arxiv.org/pdf/2501.04697)."}),
+            "use_focus": ("BOOLEAN", {"default": False,"tooltip": "Experimental.\n""Modifies the update step to better handle noise at large step sizes.\n""(https://arxiv.org/abs/2501.12243).\n""This method is incompatible with factorisation, Muon and Adam‑atan2."}),
+            "use_speed": ("BOOLEAN", {"default": False,"tooltip": "Momentum-based alternative to Prodigy,\n""faster and scale-insensitive,\n""but can be unstable with weight decay,\n""or extremely long training runs.\n""(where it's recommended to use prodigy_steps)"}),
+
+            "extra_optimizer_args": ("STRING", {"multiline": True, "default": "","tooltip": "additional optimizer args"}),
+        }}
 
     RETURN_TYPES = ("ARGS",)
     RETURN_NAMES = ("optimizer_settings",)
     FUNCTION = "create_config"
     CATEGORY = "FluxTrainer"
 
-    def create_config(self, min_snr_gamma, use_bias_correction, extra_optimizer_args, **kwargs):
-        kwargs["optimizer_type"] = "ProdigyPlusScheduleFree"
-        kwargs["lr_scheduler"] = "constant"
-        extra_args = [arg.strip() for arg in extra_optimizer_args.strip().split('|') if arg.strip()]
-        node_args = [
-                f"use_bias_correction={use_bias_correction}",
-            ]
-        kwargs["optimizer_args"] = node_args + extra_args
-        kwargs["min_snr_gamma"] = min_snr_gamma if min_snr_gamma != 0.0 else None
-        
-        return (kwargs,)    
+    def create_config(self, lr_scheduler, **kwargs):
+        # Mapping from UI display names to actual scheduler values
+        display_to_value = {
+            "schedulefree": "constant",
+            "cosine (no-schedulefree)": "cosine",
+            "linear (no-schedulefree)": "linear",
+            "polynomial (no-schedulefree)": "polynomial",
+        }
+
+        # Get the actual scheduler name for output
+        actual_scheduler = display_to_value[lr_scheduler]
+
+        # Build the configuration dictionary using the actual name
+        config = {
+            "optimizer_type": "ProdigyPlusScheduleFree",
+            "lr_scheduler": actual_scheduler,
+            "lr": 1.0,
+            "max_grad_norm": 0 if actual_scheduler == "constant" else 1, # The ProdigyPlusScheduleFree optimizer already handles gradient clipping internally, so using external gradient clipping methods is not recommended.
+            "min_snr_gamma": kwargs["min_snr_gamma"] if kwargs["min_snr_gamma"] != 0.0 else None
+        }
+
+        if lr_scheduler == "polynomial (no-schedulefree)":
+            config["lr_scheduler_power"] = kwargs["lr_scheduler_power"]
+            config["lr_scheduler_num_cycles"] = kwargs["lr_scheduler_num_cycles"]
+
+
+        # Convert all panel parameters into "key=value" strings
+        panel_args = [
+            f"prodigy_steps={kwargs['prodigy_steps']}",
+            f"d0={kwargs['d0']}",
+            f"d_coef={kwargs['d_coef']}",
+            f"split_groups={kwargs['split_groups']}",
+            f"use_bias_correction={kwargs['use_bias_correction']}",
+            f"use_stableadamw={kwargs['use_stableadamw']}",
+            # f"use_cautious={kwargs['use_cautious']}",
+            f"stochastic_rounding={kwargs['stochastic_rounding']}",
+            f"use_grams={kwargs['use_grams']}",
+            f"use_adopt={kwargs['use_adopt']}",
+            f"use_orthograd={kwargs['use_orthograd']}",
+            f"use_focus={kwargs['use_focus']}",
+            f"use_speed={kwargs['use_speed']}",
+        ]
+
+        # When using a non‑Schedule‑Free mode, add use_schedulefree=False
+        if lr_scheduler != "schedulefree":
+            panel_args.append("use_schedulefree=False")
+
+        # Append any user‑supplied extra arguments (split by "|")
+        extra_args = [arg.strip() for arg in kwargs["extra_optimizer_args"].split("|") if arg.strip()]
+        config["optimizer_args"] = panel_args + extra_args
+
+        return (config,)
 
 class InitFluxLoRATraining:
     @classmethod
